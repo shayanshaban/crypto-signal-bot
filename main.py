@@ -2,11 +2,11 @@
 main.py — CLI entry point.
 
 Commands:
-  python main.py                   fetch signal, open position if worthy
-  python main.py close <price>     close the open position at exit price
-  python main.py cancel            cancel the open position (no PnL)
-  python main.py stats             show performance summary
-  python main.py positions         show all positions table
+  python main.py                    fetch signal, open position if worthy
+  python main.py close <id> <price> close the open position at exit price
+  python main.py cancel <id>        cancel the open position (no PnL)
+  python main.py stats              show performance summary
+  python main.py positions          show all positions table
 """
 
 import sys
@@ -62,8 +62,8 @@ def cmd_signal() -> None:
         log.write(raw + "\n")
 
 
-def cmd_close(exit_price: float) -> None:
-    result = db.close_position(config.SYMBOL_DISPLAY, exit_price)
+def cmd_close(id,exit_price: float) -> None:
+    result = db.close_position(id, exit_price)
     if result is None:
         print(f"No open position for {config.SYMBOL_DISPLAY}.")
         return
@@ -74,9 +74,9 @@ def cmd_close(exit_price: float) -> None:
     notify(msg)
 
 
-def cmd_cancel() -> None:
-    ok = db.cancel_position(config.SYMBOL_DISPLAY)
-    print("Position CANCELLED." if ok else f"No open position for {config.SYMBOL_DISPLAY}.")
+def cmd_cancel(id) -> None:
+    ok = db.cancel_position(id)
+    print("Position CANCELLED." if ok else f"No open position for {id}.")
 
 
 def cmd_stats() -> None:
@@ -99,11 +99,15 @@ def main() -> None:
 
     if   not args:            cmd_signal()
     elif args[0] == "close":
-        if len(args) < 2:
-            print("Usage: python main.py close <exit_price>")
+        if len(args) < 3:
+            print("Usage: python main.py close <position_id> <exit_price>")
             sys.exit(1)
-        cmd_close(float(args[1]))
-    elif args[0] == "cancel":  cmd_cancel()
+        cmd_close(args[1],float(args[2]))
+    elif args[0] == "cancel":
+        if len(args) < 2:
+            print("Usage: python main.py cancel <position_id>")
+            sys.exit(1)
+        cmd_cancel(args[1])
     elif args[0] == "stats":   cmd_stats()
     elif args[0] == "positions": cmd_positions()
     else:

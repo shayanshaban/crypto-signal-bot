@@ -23,8 +23,8 @@ ROOT = Path(__file__).parent   # project root, usable in path builds
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 1. Trading Symbols
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SYMBOL_LBANK   = "btc_usdt"   # LBank format  (underscore, lowercase)
-SYMBOL_DISPLAY = "BTCUSDT"    # Display / prompt format
+SYMBOL_LBANK   = "eth_usdt"   # LBank format  (underscore, lowercase)
+SYMBOL_DISPLAY = "ETHUSDT"    # Display / prompt format
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

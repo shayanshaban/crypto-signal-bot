@@ -144,12 +144,12 @@ def open_position(signal: dict, signal_id: int | None = None) -> int:
         return cur.lastrowid
 
 
-def close_position(symbol: str, exit_price: float) -> dict | None:
+def close_position(id: int, exit_price: float) -> dict | None:
     """
     Mark the open position for *symbol* as CLOSED and compute PnL %.
     Returns the updated row as a dict, or None if nothing was open.
     """
-    row = get_open(symbol)
+    row = get_by_id(id)
     if row is None:
         return None
 
@@ -172,9 +172,9 @@ def close_position(symbol: str, exit_price: float) -> dict | None:
     return {**dict(row), "exit_price": exit_price, "pnl_pct": round(pnl_pct, 4)}
 
 
-def cancel_position(symbol: str) -> bool:
+def cancel_position(id: str) -> bool:
     """Mark the open position for *symbol* as CANCELLED."""
-    row = get_open(symbol)
+    row = get_by_id(id)
     if row is None:
         return False
     with _db() as cur:
@@ -197,6 +197,17 @@ def has_open_position(symbol: str | None = None) -> bool:
         else:
             cur.execute("SELECT 1 FROM positions WHERE status='OPEN' LIMIT 1")
         return cur.fetchone() is not None
+
+def get_by_id(id) -> sqlite3.Row | None:
+    with _db() as cur:
+        if id:
+            cur.execute(
+                "SELECT * FROM positions WHERE status='OPEN' AND id=? LIMIT 1",
+                (id,)
+            )
+        else:
+            cur.execute("SELECT * FROM positions WHERE status='OPEN' LIMIT 1")
+        return cur.fetchone()
 
 
 def get_open(symbol: str | None = None) -> sqlite3.Row | None:
