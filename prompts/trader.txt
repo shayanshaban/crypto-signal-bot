@@ -68,12 +68,16 @@ STEP 2 — PER-TIMEFRAME ANALYSIS:
   state internally why before dismissing it.
 
 STEP 3 — CONFLICT CHECK:
-  Compare conclusions across all timeframes:
-    - Do HTF and LTF agree on direction? YES / NO
-    - If NO: reduce confidence by at least 20 points.
-    - If signals are contradictory on 2+ timeframes: 
-      set position to NO_TRADE unless one timeframe 
-      provides overwhelming evidence.
+  Primary bias is set by 4H. 1D confirms or weakens it.
+  1W and 1M are context only — do NOT block a trade solely
+  because they disagree with 4H/15M alignment.
+
+  Rules:
+  - If 4H and 15M agree → proceed, full confidence allowed
+  - If 4H and 15M disagree → reduce confidence by 30, likely NO_TRADE
+  - If 1D contradicts 4H → reduce confidence by 15
+  - If 1M/1W contradict 4H → reduce confidence by 5 only (context noise)
+  - Never return NO_TRADE solely due to 1M/1W disagreement
 
 STEP 4 — EDGE VALIDATION:
   Answer these internally before continuing:
@@ -86,8 +90,9 @@ STEP 4 — EDGE VALIDATION:
 STEP 5 — FINAL DECISION:
   Only after completing Steps 1–4, produce the JSON.
   The "reason" field must reference evidence from 
-  at least 2 different timeframes, including
-  at least one higher timeframe (1M, 1W, 1D, or 4H).
+  at least 2 different timeframes, 
+  The primary bias reference must be 4H. 1D is secondary.
+  1M/1W are mentioned only if they reinforce the trade, not as decision drivers.
 
 None of the above steps appear in the output.
 Output ONLY the final JSON.
