@@ -1,13 +1,10 @@
-# ── Python ──────────────────────────────────────────────────
+# ── Python ───────────────────────────────────────────────────
 __pycache__/
+**/__pycache__/
 *.py[cod]
-*$py.class
+*.pyo
+*.pyd
 *.so
-.Python
-build/
-dist/
-*.egg-info/
-.eggs/
 
 # ── Virtual environments ─────────────────────────────────────
 .venv/
@@ -15,20 +12,20 @@ venv/
 env/
 ENV/
 
-# ── Environment / secrets ────────────────────────────────────
+# ── Secrets ──────────────────────────────────────────────────
 .env
 .env.*
 !.env.example
 
-# ── Playwright browser profile (contains session cookies) ───
+# ── Playwright browser profile (contains session cookies) ────
 bot_profile/
 
-# ── Runtime output files ─────────────────────────────────────
+# ── Runtime output files (keep folder, ignore contents) ──────
 output/*.txt
 logs/*.log
 logs/*.txt
+logs/*.db
 
-# Keep the folders themselves
 !output/.gitkeep
 !logs/.gitkeep
 

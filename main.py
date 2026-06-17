@@ -1,52 +1,114 @@
 """
-main.py — Entry point for the crypto signal bot.
+main.py — CLI entry point.
 
-Usage:
-    python main.py
-
-Flow:
-  1. Fetch multi-timeframe market data from LBank → output/market_data.txt
-  2. Send the assembled prompt to DeepSeek and capture the trading signal
-  3. Print the signal and append it to logs/signals.log
+Commands:
+  python main.py                   fetch signal, open position if worthy
+  python main.py close <price>     close the open position at exit price
+  python main.py cancel            cancel the open position (no PnL)
+  python main.py stats             show performance summary
+  python main.py positions         show all positions table
 """
 
 import sys
 import json
 from pathlib import Path
 
-# Make sure src/ is importable when running from the project root
 sys.path.insert(0, str(Path(__file__).parent))
 
 import config
-from src import data_fetcher, deepseek_client
+from src.data          import fetcher
+from src.ai            import deepseek_client
+from src.db            import manager as db
+from src.trading       import signal_handler
+from src.notifications import notify
 
 
-def main() -> None:
-    print("── Step 1: Fetching market data …")
-    data_fetcher.fetch_data(config.PROMPT_FILE)
-    print(f"   Data written to {config.OUTPUT_FILE!r}")
+# ── Commands ──────────────────────────────────────────────────────────────────
 
-    print("── Step 2: Requesting trading signal from DeepSeek …")
-    signal = deepseek_client.run_from_file(config.OUTPUT_FILE)
+def cmd_signal() -> None:
+    print("── [1/2] Fetching market data …")
+    fetcher.fetch_data()
+    print(f"      → {config.OUTPUT_FILE}")
 
-    if not signal:
-        print("ERROR: No response received from DeepSeek.", file=sys.stderr)
+    print("── [2/2] Querying DeepSeek …")
+    raw = deepseek_client.run_from_file(config.OUTPUT_FILE)
+
+    if not raw:
+        print("ERROR: No response from DeepSeek.", file=sys.stderr)
         sys.exit(1)
 
-    # Pretty-print if the response is valid JSON (it should be)
-    try:
-        parsed = json.loads(signal)
-        print("\n── Signal ──────────────────────────────────────")
-        print(json.dumps(parsed, indent=2))
-    except json.JSONDecodeError:
-        print("\n── Raw response (not valid JSON) ───────────────")
-        print(signal)
+    # Full pipeline: parse → save → evaluate → open
+    result = signal_handler.process(raw)
+    parsed = result["parsed"]
 
-    # Append to log
+    if parsed:
+        print("\n── Signal ─────────────────────────────────────────")
+        print(json.dumps(parsed, indent=2))
+    else:
+        print("\n── Raw response (parse failed) ─────────────────────")
+        print(raw)
+
+    print(f"\n── Decision: {result['decision']} — {result['reason']}")
+
+    if result["pos_id"]:
+        notify(
+            f"OPENED {parsed['position']} {parsed['symbol']} "
+            f"@ {parsed['entry']}  SL {parsed['stop_loss']}  TP {parsed['take_profit']}"
+        )
+
+    # Also append raw to the legacy log file
     Path(config.LOG_FILE).parent.mkdir(parents=True, exist_ok=True)
     with open(config.LOG_FILE, "a", encoding="utf-8") as log:
-        log.write(signal + "\n")
-    print(f"\n   Signal appended to {config.LOG_FILE!r}")
+        log.write(raw + "\n")
+
+
+def cmd_close(exit_price: float) -> None:
+    result = db.close_position(config.SYMBOL_DISPLAY, exit_price)
+    if result is None:
+        print(f"No open position for {config.SYMBOL_DISPLAY}.")
+        return
+    pnl = result["pnl_pct"]
+    icon = "✅" if pnl >= 0 else "❌"
+    msg  = f"{icon} CLOSED {result['direction']} {result['symbol']} — exit {exit_price}  PnL {pnl:+.2f}%"
+    print(msg)
+    notify(msg)
+
+
+def cmd_cancel() -> None:
+    ok = db.cancel_position(config.SYMBOL_DISPLAY)
+    print("Position CANCELLED." if ok else f"No open position for {config.SYMBOL_DISPLAY}.")
+
+
+def cmd_stats() -> None:
+    stats = db.get_stats(config.SYMBOL_DISPLAY)
+    print(f"\n── Stats: {stats['symbol']} ──────────────────────────")
+    for k, v in stats.items():
+        print(f"  {k:<20} {v}")
+
+
+def cmd_positions() -> None:
+    print()
+    db.print_summary()
+
+
+# ── Router ────────────────────────────────────────────────────────────────────
+
+def main() -> None:
+    db.init_db()
+    args = sys.argv[1:]
+
+    if   not args:            cmd_signal()
+    elif args[0] == "close":
+        if len(args) < 2:
+            print("Usage: python main.py close <exit_price>")
+            sys.exit(1)
+        cmd_close(float(args[1]))
+    elif args[0] == "cancel":  cmd_cancel()
+    elif args[0] == "stats":   cmd_stats()
+    elif args[0] == "positions": cmd_positions()
+    else:
+        print(__doc__)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

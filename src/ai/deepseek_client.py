@@ -1,8 +1,8 @@
 """
-src/deepseek_client.py — Browser automation for DeepSeek chat via Playwright.
+src/ai/deepseek_client.py — Playwright automation for DeepSeek chat.
 
 Public API:
-  connect(prompt_text)   — send a prompt string, return the response string
+  connect(prompt_text)   — send a prompt, return the response string
   run_from_file(path)    — read a file then call connect()
 """
 
@@ -16,27 +16,22 @@ import config
 
 def _wait_for_response(page, timeout: int = config.RESPONSE_STABLE_TIMEOUT) -> str:
     """
-    Poll the page until the assistant's reply stops changing.
-
-    "Stable" means the text is non-empty and identical across
-    RESPONSE_STABLE_CHECKS consecutive half-second polls.
-    Returns the final text, or the last captured text on timeout.
+    Poll until the assistant's reply is stable (unchanged for
+    RESPONSE_STABLE_CHECKS consecutive 0.5-second checks).
     """
     last_text    = ""
     stable_count = 0
 
-    for _ in range(timeout * 2):           # each iteration = 0.5 s
+    for _ in range(timeout * 2):
         try:
             messages = page.locator("div.ds-assistant-message-main-content")
             if messages.count() == 0:
                 messages = page.locator(".chat-message-text, .prose, .markdown")
-
             if messages.count() == 0:
                 time.sleep(0.5)
                 continue
 
             text = messages.last.inner_text().strip()
-
             if text == last_text and len(text) > 0:
                 stable_count += 1
             else:
@@ -47,21 +42,15 @@ def _wait_for_response(page, timeout: int = config.RESPONSE_STABLE_TIMEOUT) -> s
                 return text
 
         except Exception:
-            pass   # selector errors during streaming are expected — keep polling
+            pass   # selector errors during streaming are normal
 
         time.sleep(0.5)
 
-    return last_text   # timeout: return whatever we captured
+    return last_text
 
 
 def connect(prompt_text: str, retries: int = config.RETRY_ATTEMPTS) -> str | None:
-    """
-    Send *prompt_text* to DeepSeek and return the assistant's reply.
-
-    Uses a persistent Chromium profile (config.BOT_PROFILE_DIR) so the
-    session login is preserved between runs.  Run setup_browser.py once
-    to authenticate and save the profile.
-    """
+    """Send *prompt_text* to DeepSeek and return the response."""
     for attempt in range(retries):
         try:
             with sync_playwright() as p:
@@ -76,7 +65,6 @@ def connect(prompt_text: str, retries: int = config.RETRY_ATTEMPTS) -> str | Non
 
                 page.goto(config.DEEPSEEK_URL, timeout=config.BROWSER_LAUNCH_TIMEOUT)
                 page.wait_for_load_state("load", timeout=config.PAGE_LOAD_TIMEOUT)
-
                 page.wait_for_selector(
                     "textarea, div[contenteditable], input[type='text']",
                     timeout=config.SELECTOR_TIMEOUT,
@@ -84,7 +72,6 @@ def connect(prompt_text: str, retries: int = config.RETRY_ATTEMPTS) -> str | Non
 
                 textbox = page.get_by_role("textbox", name="Message DeepSeek")
                 textbox.fill(prompt_text)
-
                 page.get_by_role("radio", name=config.DEEPSEEK_MODE).click()
                 page.keyboard.press("Enter")
 
@@ -98,19 +85,16 @@ def connect(prompt_text: str, retries: int = config.RETRY_ATTEMPTS) -> str | Non
                 return response
 
         except Exception as exc:
-            print(f"Attempt {attempt + 1}/{retries} failed: {exc}", file=sys.stderr)
+            print(f"[deepseek] Attempt {attempt + 1}/{retries} failed: {exc}",
+                  file=sys.stderr)
             time.sleep(config.RETRY_DELAY_SEC)
-
             if attempt == retries - 1:
-                raise RuntimeError(
-                    "All attempts to connect to DeepSeek failed."
-                ) from exc
+                raise RuntimeError("All DeepSeek connection attempts failed.") from exc
 
-    return None   # unreachable, but satisfies type-checkers
+    return None
 
 
 def run_from_file(file_path: str) -> str | None:
-    """Read a prompt from *file_path* and send it to DeepSeek."""
+    """Read a prompt file and send it to DeepSeek."""
     with open(file_path, "r", encoding="utf-8") as fh:
-        prompt = fh.read()
-    return connect(prompt)
+        return connect(fh.read())

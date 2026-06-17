@@ -1,10 +1,8 @@
 """
 setup_browser.py — One-time DeepSeek login helper.
 
-Run this script once before using main.py.  It opens a real Chrome
-window pointed at DeepSeek so you can log in manually.  When you're
-done, press Enter in this terminal and the browser will close, saving
-your session cookies to config.BOT_PROFILE_DIR.
+Run once before using main.py. Opens Chrome so you can log in manually,
+then saves the session to config.BOT_PROFILE_DIR.
 
 Usage:
     python setup_browser.py
@@ -15,24 +13,22 @@ import config
 
 
 def main() -> None:
-    print(f"Opening Chrome with profile directory: {config.BOT_PROFILE_DIR!r}")
-    print("Log in to DeepSeek in the browser window that appears.")
-    print("When you're done, press Enter here to save and close.")
+    print(f"Profile directory : {config.BOT_PROFILE_DIR}")
+    print("Log in to DeepSeek in the browser that opens.")
+    print("Press Enter here when done to save and close.\n")
 
     with sync_playwright() as p:
-        context = p.chromium.launch_persistent_context(
+        ctx  = p.chromium.launch_persistent_context(
             user_data_dir=config.BOT_PROFILE_DIR,
             headless=False,
             channel="chrome",
         )
-        page = context.new_page()
+        page = ctx.new_page()
         page.goto(config.DEEPSEEK_URL)
+        input()
+        ctx.close()
 
-        input()   # wait for user to finish logging in
-
-        context.close()
-
-    print("Session saved. You can now run  python main.py")
+    print("Session saved.  Run:  python main.py")
 
 
 if __name__ == "__main__":

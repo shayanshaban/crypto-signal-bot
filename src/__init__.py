@@ -1,1 +1,1 @@
-"""crypto-signal-bot source package."""
+"""crypto-signal-bot — src package."""
