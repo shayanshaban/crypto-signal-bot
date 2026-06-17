@@ -39,7 +39,7 @@ def _get_current_price() -> dict:
     return response.json()
 
 
-def fetch_data() -> None:
+def fetch_data(PROMPT_FILE) -> None:
     """
     Pull multi-timeframe candle data from LBank and write the assembled
     prompt (system instructions + market data) to config.OUTPUT_FILE.
@@ -47,11 +47,10 @@ def fetch_data() -> None:
     with open(config.OUTPUT_FILE, "w", encoding="utf-8") as out:
 
         # ── System prompt ────────────────────────────────────────────────────
-        with open(config.PROMPT_FILE, "r", encoding="utf-8") as pf:
+        with open(PROMPT_FILE, "r", encoding="utf-8") as pf:
             out.write(pf.read())
 
         # ── Header ───────────────────────────────────────────────────────────
-        out.write("\nPreferred trade time frame is 15 minutes\n")
         out.write(f"Symbol : {config.SYMBOL_LBANK}\n")
         out.write(
             "Data-Format : "

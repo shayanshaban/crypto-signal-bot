@@ -23,7 +23,7 @@ from src import data_fetcher, deepseek_client
 
 def main() -> None:
     print("── Step 1: Fetching market data …")
-    data_fetcher.fetch_data()
+    data_fetcher.fetch_data(config.PROMPT_FILE)
     print(f"   Data written to {config.OUTPUT_FILE!r}")
 
     print("── Step 2: Requesting trading signal from DeepSeek …")

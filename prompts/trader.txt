@@ -99,5 +99,7 @@ Output ONLY the final JSON.
 
 Market Data:
 
+Preferred trade time frame is 15 minutes
+
 
 
