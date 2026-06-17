@@ -1,0 +1,41 @@
+# ── Python ──────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ── Virtual environments ─────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── Environment / secrets ────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Playwright browser profile (contains session cookies) ───
+bot_profile/
+
+# ── Runtime output files ─────────────────────────────────────
+output/*.txt
+logs/*.log
+logs/*.txt
+
+# Keep the folders themselves
+!output/.gitkeep
+!logs/.gitkeep
+
+# ── IDEs ─────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
