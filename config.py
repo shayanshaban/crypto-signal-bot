@@ -23,15 +23,21 @@ ROOT = Path(__file__).parent   # project root, usable in path builds
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 1. Trading Symbols
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SYMBOL_LBANK   = "eth_usdt"   # LBank format  (underscore, lowercase)
-SYMBOL_DISPLAY = "ETHUSDT"    # Display / prompt format
+SYMBOL_LBANK   = "btc_usdt"   # LBank format  (underscore, lowercase)
+SYMBOL_DISPLAY = "BTCUSDT"    # Display / prompt format
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 2. Data Sources
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-LBANK_KLINE_URL  = "https://api.lbkex.com/v2/kline.do"
-LBANK_TICKER_URL = "https://api.lbkex.com/v2/supplement/ticker/price.do"
+# https://www.lbkex.net/
+
+# https://api.lbkex.com/
+
+# https://api.lbank.info/
+
+LBANK_KLINE_URL  = "https://api.lbank.info/v2/kline.do"
+LBANK_TICKER_URL = "https://api.lbank.info/v2/supplement/ticker/price.do"
 
 WALLEX_KLINE_URL = "https://api.wallex.ir/v1/udf/history"   # alternative / spot-check
 
@@ -69,7 +75,7 @@ MIN_CONFIDENCE = 60   # signals with lower confidence are skipped
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 6. File Paths
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PROMPT_FILE = str(ROOT / "prompts" / "trader.txt")
+PROMPT_FILE = str(ROOT / "prompts" / "trader_v2.txt")
 OUTPUT_FILE = str(ROOT / "output"  / "market_data.txt")
 LOG_FILE    = str(ROOT / "logs"    / "signals.log")
 
@@ -78,11 +84,11 @@ LOG_FILE    = str(ROOT / "logs"    / "signals.log")
 # 7. Timeframes & Candles
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CANDLES = {
-    "month1":   {"tf_minutes": 43_200, "count": 24},
-    "week1":    {"tf_minutes": 10_080, "count": 52},
-    "day1":     {"tf_minutes":  1_440, "count": 120},
-    "hour4":    {"tf_minutes":    240, "count": 120},
-    "minute15": {"tf_minutes":     15, "count": 120},
+    "month1":   {"tf_minutes": 43_200, "count": 24, "row": False},
+    "week1":    {"tf_minutes": 10_080, "count": 200, "row": False},
+    "day1":     {"tf_minutes":  1_440, "count": 250, "row": False},
+    "hour4":    {"tf_minutes":    240, "count": 100, "row": True},
+    "minute15": {"tf_minutes":     15, "count": 100, "row": True},
 }
 
 TIMEFRAME_LABELS = {
