@@ -175,14 +175,28 @@ def _obv_trend(c: np.ndarray, v: np.ndarray, lookback: int = 5) -> str:
     return "rising" if obv_delta > 0 else "falling" if obv_delta < 0 else "flat"
 
 
+def _nearest_levels(levels: list[float], current_price: float, n: int = 3) -> dict:
+    """Sort swing levels and split into nearest supports/resistances vs current price."""
+    sorted_levels = sorted(set(levels))
+    below = [lv for lv in sorted_levels if lv < current_price]
+    above = [lv for lv in sorted_levels if lv > current_price]
+    return {
+        "nearest_supports":    below[-n:][::-1],   # closest first
+        "nearest_resistances": above[:n],
+    }
+
+
 # ── public API ────────────────────────────────────────────────────────────────
 
-def process_data(candles: list) -> list[dict[str, Any]]:
+def process_data(candles: list, current_price: float | None = None) -> list[dict[str, Any]]:
     """
     Convert raw kline list  [[ts, o, h, l, c, v], ...]
     → list[{"label": str, "value": any}]
 
     Candles are assumed oldest-first.
+    `current_price` (optional) — real-time market price, used as the
+    reference point for nearest support/resistance levels. Falls back
+    to this timeframe's own last close if not provided.
     """
     if not candles or len(candles) < 2:
         return [{"label": "error", "value": "insufficient data"}]
@@ -322,8 +336,12 @@ def process_data(candles: list) -> list[dict[str, Any]]:
 
     # ── swing levels ─────────────────────────────────────────────────────────
     sh, sl = _swing_points(h, l, lookback=3)
-    if sh: r("Swing resistances", sh)
-    if sl: r("Swing supports",    sl)
+    ref_price = current_price if current_price is not None else last_c
+    levels = _nearest_levels(sh + sl, ref_price, n=3)
+    if levels["nearest_resistances"]:
+        r("Nearest resistances (closest first)", levels["nearest_resistances"])
+    if levels["nearest_supports"]:
+        r("Nearest supports (closest first)",    levels["nearest_supports"])
 
     # ── candle patterns ───────────────────────────────────────────────────────
     r("Last candle", _candle_type(float(o[-1]), float(h[-1]), float(l[-1]), last_c))

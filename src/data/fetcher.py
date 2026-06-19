@@ -65,6 +65,7 @@ def fetch_data() -> None:
 
         # Current price
         ticker = _get_current_price()
+        current_price = float(ticker['data'][0]['price'])
         out.write(f"Current Price     : {ticker['data'][0]['price']}\n")
         out.write(f"Current Timestamp : {ticker['ts']}\n\n")
 
@@ -75,11 +76,12 @@ def fetch_data() -> None:
             out.write(f"Time-Frame : {label}\n\n")
             raw_data = data["data"]
             if(tf_cfg["raw"] == False or tf_cfg["raw_and_bake"] == True):
-                data["data"] = baker.process_data(data["data"])
+                # Bake raw data
+                data["data"] = baker.process_data(data["data"],current_price)
                 for baked_data in data["data"]:
                     out.write(str(baked_data["label"])+" : "+str(baked_data["value"]) + "\n")
                 out.write("\n")
-            if(tf_cfg["raw"] == True):
+            if(tf_cfg["raw"] == True or tf_cfg["raw_and_bake"] == True):
                 for candle in raw_data:
                     out.write(str(candle) + "\n")
                 out.write("\n")
