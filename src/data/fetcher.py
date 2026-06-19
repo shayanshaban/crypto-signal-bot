@@ -73,15 +73,16 @@ def fetch_data() -> None:
             label = config.TIMEFRAME_LABELS[tf_key]
             data  = _get_candles(tf_key, tf_cfg["tf_minutes"], tf_cfg["count"])
             out.write(f"Time-Frame : {label}\n\n")
-            if(tf_cfg["row"] == True):
-                for candle in data["data"]:
-                    out.write(str(candle) + "\n")
-                out.write("\n")
-            else:
+            if(tf_cfg["raw"] == False or tf_cfg["raw_and_bake"] == True):
                 data["data"] = baker.process_data(data["data"])
                 for baked_data in data["data"]:
                     out.write(str(baked_data["label"])+" : "+str(baked_data["value"]) + "\n")
                 out.write("\n")
+            if(tf_cfg["raw"] == True):
+                for candle in data["data"]:
+                    out.write(str(candle) + "\n")
+                out.write("\n")
+            
 
 
 # ── Wallex ────────────────────────────────────────────────────────────────────

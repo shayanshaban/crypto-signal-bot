@@ -84,11 +84,11 @@ LOG_FILE    = str(ROOT / "logs"    / "signals.log")
 # 7. Timeframes & Candles
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CANDLES = {
-    "month1":   {"tf_minutes": 43_200, "count": 24, "row": False},
-    "week1":    {"tf_minutes": 10_080, "count": 200, "row": False},
-    "day1":     {"tf_minutes":  1_440, "count": 250, "row": False},
-    "hour4":    {"tf_minutes":    240, "count": 100, "row": True},
-    "minute15": {"tf_minutes":     15, "count": 100, "row": True},
+    "month1":   {"tf_minutes": 43_200, "count": 24, "raw": False, "raw_and_bake": False},
+    "week1":    {"tf_minutes": 10_080, "count": 200, "raw": False, "raw_and_bake": False},
+    "day1":     {"tf_minutes":  1_440, "count": 250, "raw": False, "raw_and_bake": False},
+    "hour4":    {"tf_minutes":    240, "count": 250, "raw": False, "raw_and_bake": False},
+    "minute15": {"tf_minutes":     15, "count": 120, "raw": True, "raw_and_bake": True},
 }
 
 TIMEFRAME_LABELS = {
