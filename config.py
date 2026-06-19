@@ -75,7 +75,7 @@ MIN_CONFIDENCE = 60   # signals with lower confidence are skipped
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 6. File Paths
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PROMPT_FILE = str(ROOT / "prompts" / "trader_v3.txt")
+PROMPT_FILE = str(ROOT / "prompts" / "trader_v4.txt")
 OUTPUT_FILE = str(ROOT / "output"  / "market_data.txt")
 LOG_FILE    = str(ROOT / "logs"    / "signals.log")
 
