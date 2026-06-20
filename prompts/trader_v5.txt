@@ -67,3 +67,7 @@ JSON schema:
 "risk_reward": 0,
 "reason": "brief explanation"
 }
+
+Market Data:
+
+Preferred trade time frame is 15 minutes
