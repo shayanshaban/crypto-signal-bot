@@ -2,7 +2,7 @@
 src/ai/deepseek_client.py — Playwright automation for DeepSeek chat.
 
 Public API:
-  connect(prompt_text)   — send a prompt, return the response string
+  connect(prompt_text)   — send a prompt, return {'response': str, 'chat_link': str}
   run_from_file(path)    — read a file then call connect()
 """
 
@@ -49,17 +49,23 @@ def _wait_for_response(page, timeout: int = config.RESPONSE_STABLE_TIMEOUT) -> s
     return last_text
 
 
-def connect(prompt_text: str, retries: int = config.RETRY_ATTEMPTS) -> str | None:
-    """Send *prompt_text* to DeepSeek and return the response."""
+def connect(prompt_text: str, retries: int = config.RETRY_ATTEMPTS) -> dict | None:
+    """
+    Send *prompt_text* to DeepSeek and return {'response': str, 'chat_link': str}.
+
+    Uses a fresh browser + shared storage_state (cookies/login) instead of a
+    persistent_context, so multiple threads can run concurrently without
+    fighting over a locked profile directory.
+    """
     for attempt in range(retries):
         try:
             with sync_playwright() as p:
-                context = p.chromium.launch_persistent_context(
-                    user_data_dir=config.BOT_PROFILE_DIR,
+                browser = p.chromium.launch(
                     headless=False,
                     channel="chrome",
                     timeout=config.BROWSER_LAUNCH_TIMEOUT,
                 )
+                context = browser.new_context(storage_state=config.BOT_STORAGE_STATE)
                 page = context.new_page()
                 page.set_default_timeout(config.BROWSER_LAUNCH_TIMEOUT)
 
@@ -80,9 +86,12 @@ def connect(prompt_text: str, retries: int = config.RETRY_ATTEMPTS) -> str | Non
                     timeout=config.RESPONSE_START_TIMEOUT,
                 )
 
-                response = _wait_for_response(page)
+                response  = _wait_for_response(page)
+                chat_link = page.url
+
                 context.close()
-                return response
+                browser.close()
+                return {"response": response, "chat_link": chat_link}
 
         except Exception as exc:
             print(f"[deepseek] Attempt {attempt + 1}/{retries} failed: {exc}",
@@ -94,7 +103,7 @@ def connect(prompt_text: str, retries: int = config.RETRY_ATTEMPTS) -> str | Non
     return None
 
 
-def run_from_file(file_path: str) -> str | None:
+def run_from_file(file_path: str) -> dict | None:
     """Read a prompt file and send it to DeepSeek."""
     with open(file_path, "r", encoding="utf-8") as fh:
         return connect(fh.read())

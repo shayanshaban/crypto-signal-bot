@@ -21,6 +21,7 @@ from src.ai            import deepseek_client
 from src.db            import manager as db
 from src.trading       import signal_handler
 from src.notifications import notify
+from src.backtest import runner
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────
@@ -38,7 +39,7 @@ def cmd_signal() -> None:
         sys.exit(1)
 
     # Full pipeline: parse → save → evaluate → open
-    result = signal_handler.process(raw)
+    result = signal_handler.process(raw["response"])
     parsed = result["parsed"]
 
     if parsed:
@@ -46,7 +47,7 @@ def cmd_signal() -> None:
         print(json.dumps(parsed, indent=2))
     else:
         print("\n── Raw response (parse failed) ─────────────────────")
-        print(raw)
+        print(raw["response"])
 
     print(f"\n── Decision: {result['decision']} — {result['reason']}")
 
@@ -59,7 +60,7 @@ def cmd_signal() -> None:
     # Also append raw to the legacy log file
     Path(config.LOG_FILE).parent.mkdir(parents=True, exist_ok=True)
     with open(config.LOG_FILE, "a", encoding="utf-8") as log:
-        log.write(raw + "\n")
+        log.write(raw["response"] + "\n")
 
 
 def cmd_close(id,exit_price: float) -> None:
@@ -110,6 +111,12 @@ def main() -> None:
         cmd_cancel(args[1])
     elif args[0] == "stats":   cmd_stats()
     elif args[0] == "positions": cmd_positions()
+    elif args[0] == "start-bt":
+        runner.start_backtest()
+    elif args[0] == "resume-bt":
+        runner.resume_backtest()
+    elif args[0] == "draw":
+        print("Not implemented yet.")
     else:
         print(__doc__)
         sys.exit(1)

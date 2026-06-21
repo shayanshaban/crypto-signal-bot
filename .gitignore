@@ -19,7 +19,7 @@ ENV/
 
 # ── Playwright browser profile (contains session cookies) ────
 bot_profile/
-
+bot_storage_state.json
 # ── Runtime output files (keep folder, ignore contents) ──────
 output/*.txt
 logs/*.log
