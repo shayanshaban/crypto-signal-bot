@@ -61,7 +61,7 @@ def connect(prompt_text: str, retries: int = config.RETRY_ATTEMPTS) -> dict | No
         try:
             with sync_playwright() as p:
                 browser = p.chromium.launch(
-                    headless=False,
+                    headless=config.HEAD_LESS_MODE,
                     channel="chrome",
                     timeout=config.BROWSER_LAUNCH_TIMEOUT,
                 )

@@ -50,6 +50,7 @@ DEEPSEEK_URL    = "https://chat.deepseek.com/"
 BOT_PROFILE_DIR = str(ROOT / "bot_profile")  # persists login session
 DEEPSEEK_MODE   = "Expert"                   # radio-button label in the UI
 BOT_STORAGE_STATE = "bot_storage_state.json"
+HEAD_LESS_MODE = True               # if true browser won't popup 
 # Timeouts — all in milliseconds unless noted
 BROWSER_LAUNCH_TIMEOUT  = 60_000    # ms
 PAGE_LOAD_TIMEOUT       = 30_000    # ms
