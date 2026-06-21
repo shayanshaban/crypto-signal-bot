@@ -25,7 +25,7 @@ output/*.txt
 logs/*.log
 logs/*.txt
 logs/*.db
-data/*.json
+data/back_test/*.json
 !output/.gitkeep
 !logs/.gitkeep
 
