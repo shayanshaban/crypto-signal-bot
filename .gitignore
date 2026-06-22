@@ -22,6 +22,7 @@ bot_profile/
 bot_storage_state.json
 # ── Runtime output files (keep folder, ignore contents) ──────
 output/*.txt
+output/*.html
 logs/*.log
 logs/*.txt
 logs/*.db

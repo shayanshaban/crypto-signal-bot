@@ -187,7 +187,76 @@ def _nearest_levels(levels: list[float], current_price: float, n: int = 3) -> di
 
 
 # ── public API ────────────────────────────────────────────────────────────────
+def should_ask_ai(candles: list, current_price: float | None = None) -> bool:
+    """
+    Returns True only when at least one high-probability setup is detected,
+    so the AI is called only on meaningful candles instead of every single one.
 
+    Triggers (any one is enough):
+      1. MACD bullish or bearish cross
+      2. RSI crossed into/out of overbought or oversold zone
+      3. Price touched or broke Bollinger Band + volume spike
+      4. Bullish or bearish engulfing with above-average volume
+      5. EMA9 / EMA21 cross
+    """
+    if not candles or len(candles) < 30:
+        return False
+
+    o = np.array([float(c[1]) for c in candles])
+    h = np.array([float(c[2]) for c in candles])
+    l = np.array([float(c[3]) for c in candles])
+    c = np.array([float(c[4]) for c in candles])
+    v = np.array([float(c[5]) for c in candles])
+
+    # ── 1) MACD cross ─────────────────────────────────────────────────────────
+    macd_v,  _, _ = _macd(c)
+    macd_pv, _, _ = _macd(c[:-1])
+    if macd_v is not None and macd_pv is not None:
+        macd_s  = _ema(_ema(c,      12)[26-12:] - _ema(c,      26), 9)
+        macd_ps = _ema(_ema(c[:-1], 12)[26-12:] - _ema(c[:-1], 26), 9)
+        if macd_s is not None and macd_ps is not None:
+            prev_above = macd_pv > float(macd_ps[-1])
+            curr_above = macd_v  > float(macd_s[-1])
+            if prev_above != curr_above:   # cross happened this candle
+                return True
+
+    # ── 2) RSI zone cross ─────────────────────────────────────────────────────
+    rsi_now  = _rsi(c,      14)
+    rsi_prev = _rsi(c[:-1], 14)
+    if rsi_now is not None and rsi_prev is not None:
+        for level in (30, 70):
+            crossed = (rsi_prev < level <= rsi_now) or (rsi_prev > level >= rsi_now)
+            if crossed:
+                return True
+
+    # ── 3) BB touch + volume spike ────────────────────────────────────────────
+    bb_u, bb_m, bb_l = _bollinger(c, 20, 2.0)
+    if bb_u is not None:
+        vol_avg = float(v[-21:-1].mean()) if len(v) >= 21 else float(v[:-1].mean())
+        vol_spike = vol_avg > 0 and float(v[-1]) >= vol_avg * 1.5
+        last_c = float(c[-1])
+        if vol_spike and (last_c >= bb_u or last_c <= bb_l):
+            return True
+
+    # ── 4) Engulfing + above-average volume ───────────────────────────────────
+    eng = _engulfing(float(o[-2]), float(c[-2]), float(o[-1]), float(c[-1]))
+    if eng is not None:
+        vol_avg = float(v[-21:-1].mean()) if len(v) >= 21 else float(v[:-1].mean())
+        if vol_avg > 0 and float(v[-1]) >= vol_avg * 1.2:
+            return True
+
+    # ── 5) EMA9 / EMA21 cross ─────────────────────────────────────────────────
+    e9_now  = _ema(c,      9)
+    e21_now = _ema(c,      21)
+    e9_prev = _ema(c[:-1], 9)
+    e21_prev= _ema(c[:-1], 21)
+    if all(x is not None for x in (e9_now, e21_now, e9_prev, e21_prev)):
+        prev_above = float(e9_prev[-1]) > float(e21_prev[-1])
+        curr_above = float(e9_now[-1])  > float(e21_now[-1])
+        if prev_above != curr_above:
+            return True
+
+    return False
 def process_data(candles: list, current_price: float | None = None) -> list[dict[str, Any]]:
     """
     Convert raw kline list  [[ts, o, h, l, c, v], ...]

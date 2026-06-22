@@ -12,6 +12,7 @@ Commands:
 import sys
 import json
 from pathlib import Path
+import webbrowser
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -22,6 +23,7 @@ from src.db            import manager as db
 from src.trading       import signal_handler
 from src.notifications import notify
 from src.backtest import runner
+from src.data.drawer import backtest_draw
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────
@@ -112,11 +114,17 @@ def main() -> None:
     elif args[0] == "stats":   cmd_stats()
     elif args[0] == "positions": cmd_positions()
     elif args[0] == "start-bt":
-        runner.start_backtest()
+        runner.full_start()
+    elif args[0] == "reset-bt":
+        runner.re_start()
     elif args[0] == "resume-bt":
         runner.resume_backtest()
-    elif args[0] == "draw":
-        print("Not implemented yet.")
+    elif args[0] == "draw-bt":
+        backtest_draw.draw_chart(
+        timeframe=config.TRADING_TIME_FRAME,
+        output_html=config.BACK_TEST_CHART_OUTPUT_FILE,
+        )
+        webbrowser.open(config.BACK_TEST_CHART_OUTPUT_FILE)
     else:
         print(__doc__)
         sys.exit(1)

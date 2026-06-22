@@ -2,23 +2,19 @@
 src/ai/deepseek_client.py — Playwright automation for DeepSeek chat.
 
 Public API:
-  connect(prompt_text)   — send a prompt, return {'response': str, 'chat_link': str}
-  run_from_file(path)    — read a file then call connect()
+  DeepSeekSession          — persistent browser session for a backtest thread
+  run_from_file(path)      — stateless single call (for live trading)
 """
 
 import sys
 import time
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, Playwright
 
 import config
 
 
 def _wait_for_response(page, timeout: int = config.RESPONSE_STABLE_TIMEOUT) -> str:
-    """
-    Poll until the assistant's reply is stable (unchanged for
-    RESPONSE_STABLE_CHECKS consecutive 0.5-second checks).
-    """
     last_text    = ""
     stable_count = 0
 
@@ -42,31 +38,59 @@ def _wait_for_response(page, timeout: int = config.RESPONSE_STABLE_TIMEOUT) -> s
                 return text
 
         except Exception:
-            pass   # selector errors during streaming are normal
+            pass
 
         time.sleep(0.5)
 
     return last_text
 
 
-def connect(prompt_text: str, retries: int = config.RETRY_ATTEMPTS) -> dict | None:
+class DeepSeekSession:
     """
-    Send *prompt_text* to DeepSeek and return {'response': str, 'chat_link': str}.
+    Persistent browser session — open once per thread, reuse for every AI call.
+    Each call opens a NEW chat page so context from previous signals
+    doesn't leak into the next one.
 
-    Uses a fresh browser + shared storage_state (cookies/login) instead of a
-    persistent_context, so multiple threads can run concurrently without
-    fighting over a locked profile directory.
+    Usage:
+        with DeepSeekSession() as session:
+            result = session.send(prompt_text)
     """
-    for attempt in range(retries):
+
+    def __init__(self):
+        self._playwright: Playwright | None = None
+        self._browser    = None
+        self._context    = None
+
+    def __enter__(self):
+        self._playwright = sync_playwright().start()
+        self._browser = self._playwright.chromium.launch(
+            headless=config.HEAD_LESS_MODE,
+            channel="chrome",
+            timeout=config.BROWSER_LAUNCH_TIMEOUT,
+        )
+        self._context = self._browser.new_context(
+            storage_state=config.BOT_STORAGE_STATE
+        )
+        return self
+
+    def __exit__(self, *_):
         try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(
-                    headless=config.HEAD_LESS_MODE,
-                    channel="chrome",
-                    timeout=config.BROWSER_LAUNCH_TIMEOUT,
-                )
-                context = browser.new_context(storage_state=config.BOT_STORAGE_STATE)
-                page = context.new_page()
+            self._context.close()
+            self._browser.close()
+            self._playwright.stop()
+        except Exception:
+            pass
+
+    def send(self, prompt_text: str, retries: int = config.RETRY_ATTEMPTS) -> dict | None:
+        """
+        Send a prompt in a fresh chat page and return
+        {'response': str, 'chat_link': str}.
+        Browser stays open between calls.
+        """
+        for attempt in range(retries):
+            page = None
+            try:
+                page = self._context.new_page()
                 page.set_default_timeout(config.BROWSER_LAUNCH_TIMEOUT)
 
                 page.goto(config.DEEPSEEK_URL, timeout=config.BROWSER_LAUNCH_TIMEOUT)
@@ -89,21 +113,38 @@ def connect(prompt_text: str, retries: int = config.RETRY_ATTEMPTS) -> dict | No
                 response  = _wait_for_response(page)
                 chat_link = page.url
 
-                context.close()
-                browser.close()
+                page.close()   # فقط tab بسته می‌شه، مرورگر باز می‌مونه
                 return {"response": response, "chat_link": chat_link}
 
-        except Exception as exc:
-            print(f"[deepseek] Attempt {attempt + 1}/{retries} failed: {exc}",
-                  file=sys.stderr)
-            time.sleep(config.RETRY_DELAY_SEC)
-            if attempt == retries - 1:
-                raise RuntimeError("All DeepSeek connection attempts failed.") from exc
+            except Exception as exc:
+                print(f"[deepseek] Attempt {attempt + 1}/{retries} failed: {exc}",
+                      file=sys.stderr)
+                if page:
+                    try:
+                        page.close()
+                    except Exception:
+                        pass
+                time.sleep(config.RETRY_DELAY_SEC)
+                if attempt == retries - 1:
+                    raise RuntimeError("All DeepSeek connection attempts failed.") from exc
 
-    return None
+        return None
+
+    def send_from_file(self, file_path: str) -> dict | None:
+        """Read a prompt file and send it."""
+        with open(file_path, "r", encoding="utf-8") as fh:
+            return self.send(fh.read())
+
+
+# ── stateless API for live trading ───────────────────────────────────────────
+
+def connect(prompt_text: str, retries: int = config.RETRY_ATTEMPTS) -> dict | None:
+    """Single-shot call — opens and closes browser each time. For live trading."""
+    with DeepSeekSession() as session:
+        return session.send(prompt_text, retries=retries)
 
 
 def run_from_file(file_path: str) -> dict | None:
-    """Read a prompt file and send it to DeepSeek."""
-    with open(file_path, "r", encoding="utf-8") as fh:
-        return connect(fh.read())
+    """Single-shot call from file. For live trading."""
+    with DeepSeekSession() as session:
+        return session.send_from_file(file_path)

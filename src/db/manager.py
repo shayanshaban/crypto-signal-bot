@@ -154,7 +154,23 @@ def init_db() -> None:
             )
         """)
 
-# ── BackTest ──────────────────────────────────────────────────────────────────
+# ── BackTest 
+def get_candles_for_trigger(timestamp: int, timeframe: str, count: int = 100) -> list:
+    """
+    Return the last `count` candles up to `timestamp` from historical_candels,
+    in [[ts, o, h, l, c, v]] format — same as LBank raw output.
+    Used to feed baker.should_ask_ai() without going through the full fetcher.
+    """
+    with _db() as cur:
+        rows = cur.execute("""
+            SELECT Timestamp, Open, High, Low, Close, Volume
+            FROM historical_candels
+            WHERE Timeframe = ? AND Timestamp <= ?
+            ORDER BY Timestamp DESC
+            LIMIT ?
+        """, (timeframe, timestamp, count)).fetchall()
+
+    return [list(r) for r in reversed(rows)]
 def get_current_price_from_db(timestamp: int) -> dict:
     """
     Return the latest known price at/before the given timestamp,

@@ -50,7 +50,7 @@ DEEPSEEK_URL    = "https://chat.deepseek.com/"
 BOT_PROFILE_DIR = str(ROOT / "bot_profile")  # persists login session
 DEEPSEEK_MODE   = "Expert"                   # radio-button label in the UI
 BOT_STORAGE_STATE = "bot_storage_state.json"
-HEAD_LESS_MODE = True               # if true browser won't popup 
+HEAD_LESS_MODE = False               # if true browser won't popup 
 # Timeouts — all in milliseconds unless noted
 BROWSER_LAUNCH_TIMEOUT  = 60_000    # ms
 PAGE_LOAD_TIMEOUT       = 30_000    # ms
@@ -77,7 +77,7 @@ MIN_CONFIDENCE = 60   # signals with lower confidence are skipped
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 6. File Paths
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PROMPT_FILE = str(ROOT / "prompts" / "trader_v5.txt")
+PROMPT_FILE = str(ROOT / "prompts" / "trader_v7.txt")
 OUTPUT_FILE = str(ROOT / "output"  / "market_data.txt")
 LOG_FILE    = str(ROOT / "logs"    / "signals.log")
 
@@ -107,7 +107,9 @@ TIMEFRAME_LABELS = {
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 8. BackTester Setting
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BACK_TEST_THREAD = 1    # The Concurency of back testing
+BACK_TEST_THREAD = 2    # The Concurency of back testing
+
+BACK_TEST_WAIT_AFTER_ASK_AI = 10
 
 BACK_TEST_CANDLES = {
     "month1":   {"tf_minutes": 43_200, "count": 36, "raw": False, "raw_and_bake": False},
@@ -116,6 +118,9 @@ BACK_TEST_CANDLES = {
     "hour4":    {"tf_minutes":    240, "count": 2000, "raw": False, "raw_and_bake": False},
     "minute15": {"tf_minutes":     15, "count": 2000, "raw": True, "raw_and_bake": True},
 }
+
+BACK_TEST_CHART_OUTPUT_FILE = str(ROOT / "output" / "backtest_chart.html")
+
 BACK_TEST_WARMUP_TRIM     = 500        # Trim base line to prevent out index error for historical data
 BACK_TEST_STATE_FILES     = [f"data/back_test/state_{i}.json" for i in range(BACK_TEST_THREAD)]
 
