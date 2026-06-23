@@ -20,6 +20,8 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 import time
+import json           # NEW
+import pandas as pd   # NEW
 import config
 
 
@@ -86,7 +88,7 @@ def init_db() -> None:
             )
         """)
 
-        # back test table
+        # back test table (UPDATED with two new columns)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS back_test_signals (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,26 +108,29 @@ def init_db() -> None:
         """)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS back_test_position (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
-            signal_id        INTEGER REFERENCES back_test_signals(id),
-            thread_index     INTEGER,
-            symbol           TEXT    NOT NULL,
-            timeframe        TEXT,
-            position         TEXT    NOT NULL,
-            status           TEXT    NOT NULL DEFAULT 'OPEN',
-            confidence       INTEGER,
-            entry            REAL    NOT NULL,
-            stop_loss        REAL    NOT NULL,
-            take_profit      REAL    NOT NULL,
-            risk_reward      REAL,
-            exit_price       REAL,
-            pnl_pct          REAL,
-            reason           TEXT,
-            entry_timestamp  INTEGER,
-            exit_timestamp   INTEGER,
-            opened_at        TEXT    DEFAULT (datetime('now', 'localtime')),
-            closed_at        TEXT
-        )
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                signal_id        INTEGER REFERENCES back_test_signals(id),
+                thread_index     INTEGER,
+                symbol           TEXT    NOT NULL,
+                timeframe        TEXT,
+                position         TEXT    NOT NULL,
+                status           TEXT    NOT NULL DEFAULT 'OPEN',
+                confidence       INTEGER,
+                entry            REAL    NOT NULL,
+                stop_loss        REAL    NOT NULL,
+                take_profit      REAL    NOT NULL,
+                risk_reward      REAL,
+                exit_price       REAL,
+                pnl_pct          REAL,
+                reason           TEXT,
+                entry_timestamp  INTEGER,
+                exit_timestamp   INTEGER,
+                opened_at        TEXT    DEFAULT (datetime('now', 'localtime')),
+                closed_at        TEXT,
+                -- NEW columns for ML pipeline
+                setup_type       TEXT,           -- e.g., 'trend_pullback'
+                features_json    TEXT            -- JSON dictionary of all features
+            )
         """)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS historical_candels (
@@ -150,11 +155,23 @@ def init_db() -> None:
                 Volume      REAL,
                 Timeframe   TEXT,
                 IsChecked   Boolean   DEFAULT FALSE
-                
             )
         """)
 
-# ── BackTest 
+        # --- MIGRATION: add new columns if they don't exist (for existing databases) ---
+        # This ensures we don't break existing installations.
+        try:
+            cur.execute("ALTER TABLE back_test_position ADD COLUMN setup_type TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+        try:
+            cur.execute("ALTER TABLE back_test_position ADD COLUMN features_json TEXT")
+        except sqlite3.OperationalError:
+            pass
+
+
+# ── BackTest (existing functions) ──────────────────────────────────────────
+
 def get_candles_for_trigger(timestamp: int, timeframe: str, count: int = 100) -> list:
     """
     Return the last `count` candles up to `timestamp` from historical_candels,
@@ -169,8 +186,9 @@ def get_candles_for_trigger(timestamp: int, timeframe: str, count: int = 100) ->
             ORDER BY Timestamp DESC
             LIMIT ?
         """, (timeframe, timestamp, count)).fetchall()
-
     return [list(r) for r in reversed(rows)]
+
+
 def get_current_price_from_db(timestamp: int) -> dict:
     """
     Return the latest known price at/before the given timestamp,
@@ -189,25 +207,19 @@ def get_current_price_from_db(timestamp: int) -> dict:
             ORDER BY Timestamp DESC
             LIMIT 1
         """, (config.TRADING_TIME_FRAME, timestamp)).fetchone()
-
     if row is None:
         return {"data": [], "ts": timestamp}
-
     ts, close = row
+    return {"data": [{"price": close}], "ts": ts}
 
-    return {
-        "data": [{"price": close}],
-        "ts": ts,
-    }
+
 def get_candles_from_db(timeframe: str, tf_minutes: int, count: int, to_time: int) -> dict:
     """
     Return candles from historical_candels in the same shape as the
     LBank kline API response: {"data": [[Timestamp, Open, High, Low, Close, Volume], ...]}.
     Used to feed the backtester from local data instead of calling the exchange.
     """
-    
     from_time = to_time - (count * tf_minutes * 60)
-
     with _db() as cur:
         rows = cur.execute("""
             SELECT Timestamp, Open, High, Low, Close, Volume
@@ -216,8 +228,9 @@ def get_candles_from_db(timeframe: str, tf_minutes: int, count: int, to_time: in
             ORDER BY Timestamp ASC
             LIMIT ?
         """, (timeframe, from_time, to_time, count)).fetchall()
-
     return {"data": [list(row) for row in rows]}
+
+
 def reset_back_test_db(include_historical: bool = False) -> None:
     """
     Wipe all back test tables to start a completely fresh run.
@@ -231,19 +244,16 @@ def reset_back_test_db(include_historical: bool = False) -> None:
         cur.execute("DELETE FROM back_test_signals")
         cur.execute("DELETE FROM back_test_position")
         cur.execute("DELETE FROM back_test_candels_base_line")
-
         if include_historical:
             cur.execute("DELETE FROM historical_candels")
-
-        # reset AUTOINCREMENT counters so ids start from 1 again
         tables = ["back_test_signals", "back_test_position", "back_test_candels_base_line"]
         if include_historical:
             tables.append("historical_candels")
-
         cur.execute(
             f"DELETE FROM sqlite_sequence WHERE name IN ({','.join('?' * len(tables))})",
             tables
         )
+
 
 def rebuild_baseline_from_historical(base_timeframe: str) -> None:
     """
@@ -260,6 +270,7 @@ def rebuild_baseline_from_historical(base_timeframe: str) -> None:
             WHERE Timeframe = ?
         """, (base_timeframe,))
 
+
 def save_back_test_signal(raw: str, parsed: dict, chat_link: str | None = None,
                             thread_index: int | None = None) -> int:
     with _db() as cur:
@@ -274,7 +285,8 @@ def save_back_test_signal(raw: str, parsed: dict, chat_link: str | None = None,
             parsed.get("risk_reward"), parsed.get("reason"), chat_link, thread_index,
         ))
         return cur.lastrowid
-    
+
+
 def save_historical_candel(candels, timeframe: str) -> None:
     """
     Save historical candels for feeding the back tester.
@@ -289,25 +301,45 @@ def save_historical_candel(candels, timeframe: str) -> None:
             (c[0], c[1], c[2], c[3], c[4], c[5], timeframe)
             for c in candels
         ])
-    
+
+
 def open_back_test_position(signal: dict, signal_id: int | None = None,
                               timeframe: str | None = None,
                               entry_timestamp: int | None = None,
-                              thread_index: int | None = None) -> int:
+                              thread_index: int | None = None,
+                              setup_type: str | None = None,
+                              features: dict | None = None) -> int:
+    """
+    Insert a new backtest position, optionally storing setup_type and features.
+
+    Args:
+        signal: dict with keys like symbol, position, entry, stop_loss, take_profit, etc.
+        signal_id: optional reference to back_test_signals row.
+        timeframe: e.g., '1m', '5m'.
+        entry_timestamp: unix timestamp when the position was opened.
+        thread_index: which backtest thread owns this position.
+        setup_type: string identifying the rule that triggered this trade (e.g., 'trend_pullback').
+        features: dict of all features extracted for ML (will be stored as JSON).
+
+    Returns:
+        new position row id.
+    """
     if signal.get("position") == "NO_TRADE":
         raise ValueError("Cannot open a NO_TRADE signal.")
+
+    features_json = json.dumps(features) if features else None
 
     with _db() as cur:
         cur.execute("""
             INSERT INTO back_test_position
                 (signal_id, symbol, timeframe, position, confidence,
                  entry, stop_loss, take_profit, risk_reward, reason,
-                 entry_timestamp, thread_index)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 entry_timestamp, thread_index, setup_type, features_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             signal_id, signal["symbol"], timeframe, signal["position"], signal.get("confidence"),
             signal["entry"], signal["stop_loss"], signal["take_profit"], signal.get("risk_reward"),
-            signal.get("reason"), entry_timestamp, thread_index,
+            signal.get("reason"), entry_timestamp, thread_index, setup_type, features_json
         ))
         return cur.lastrowid
 
@@ -315,6 +347,15 @@ def open_back_test_position(signal: dict, signal_id: int | None = None,
 def close_back_test_position(position_id: int, exit_price: float,
                                exit_timestamp: int | None = None,
                                status: str = "CLOSED") -> None:
+    """
+    Close a backtest position, compute PnL, and update timestamps.
+
+    Args:
+        position_id: row id of the position.
+        exit_price: price at which the position was closed.
+        exit_timestamp: unix timestamp of exit (optional).
+        status: e.g., 'CLOSED', 'TP', 'SL'.
+    """
     with _db() as cur:
         row = cur.execute(
             "SELECT entry, position FROM back_test_position WHERE id = ?",
@@ -322,17 +363,17 @@ def close_back_test_position(position_id: int, exit_price: float,
         ).fetchone()
         if row is None:
             raise ValueError(f"Position {position_id} not found.")
-
         entry, side = row[0], row[1]
         pnl_pct = ((exit_price - entry) / entry * 100 if side == "LONG"
                    else (entry - exit_price) / entry * 100)
-
         cur.execute("""
             UPDATE back_test_position
             SET exit_price = ?, exit_timestamp = ?, pnl_pct = ?, status = ?,
                 closed_at = datetime('now', 'localtime')
             WHERE id = ?
         """, (exit_price, exit_timestamp, pnl_pct, status, position_id))
+
+
 def get_chart_data(symbol: str, timeframe: str):
     """
     Returns candles + positions for charting, aligned by timestamp.
@@ -344,7 +385,6 @@ def get_chart_data(symbol: str, timeframe: str):
             WHERE Timeframe = ?
             ORDER BY Timestamp ASC
         """, (timeframe,)).fetchall()
-
         positions = cur.execute("""
             SELECT id, position, entry, stop_loss, take_profit, exit_price,
                    entry_timestamp, exit_timestamp, status, pnl_pct
@@ -352,8 +392,8 @@ def get_chart_data(symbol: str, timeframe: str):
             WHERE symbol = ? AND timeframe = ?
             ORDER BY entry_timestamp ASC
         """, (symbol, timeframe)).fetchall()
-
     return {"candles": candles, "positions": positions}
+
 
 def save_back_test_candels_base_line(candels, timeframe: str) -> None:
     """
@@ -383,10 +423,8 @@ def get_next_baseline_candle(timeframe: str) -> dict | None:
             ORDER BY Timestamp ASC
             LIMIT 1
         """, (timeframe,)).fetchone()
-
         if row is None:
             return None
-
         return {
             "id": row[0], "Timestamp": row[1], "Open": row[2],
             "High": row[3], "Low": row[4], "Close": row[5], "Volume": row[6],
@@ -413,6 +451,7 @@ def reset_baseline_progress(timeframe: str | None = None) -> None:
             )
         else:
             cur.execute("UPDATE back_test_candels_base_line SET IsChecked = FALSE")
+
 
 def get_baseline_ids(trim: int = 0) -> list[int]:
     """
@@ -442,10 +481,8 @@ def get_next_baseline_candle_in_range(start_id: int, end_id: int) -> dict | None
             ORDER BY Timestamp ASC
             LIMIT 1
         """, (start_id, end_id)).fetchone()
-
         if row is None:
             return None
-
         return {
             "id": row[0], "Timestamp": row[1], "Open": row[2],
             "High": row[3], "Low": row[4], "Close": row[5],
@@ -462,7 +499,6 @@ def get_open_position_for_thread(thread_index: int) -> dict | None:
             WHERE thread_index = ? AND status = 'OPEN'
             LIMIT 1
         """, (thread_index,)).fetchone()
-
     if row is None:
         return None
     return {"id": row[0], "position": row[1], "entry": row[2],
@@ -481,10 +517,8 @@ def check_position_tp_sl(position_id: int, candle: dict) -> bool:
         ).fetchone()
     if row is None:
         return False
-
     side, sl, tp = row
     high, low, ts = candle["High"], candle["Low"], candle["Timestamp"]
-
     if side == "LONG":
         if low <= sl:
             close_back_test_position(position_id, sl, exit_timestamp=ts, status="SL")
@@ -499,7 +533,6 @@ def check_position_tp_sl(position_id: int, candle: dict) -> bool:
         if low <= tp:
             close_back_test_position(position_id, tp, exit_timestamp=ts, status="TP")
             return True
-
     return False
 
 
@@ -509,6 +542,111 @@ def get_baseline_progress() -> tuple[int, int]:
         total   = cur.execute("SELECT COUNT(*) FROM back_test_candels_base_line").fetchone()[0]
         checked = cur.execute("SELECT COUNT(*) FROM back_test_candels_base_line WHERE IsChecked = TRUE").fetchone()[0]
     return checked, total
+
+
+# ── NEW Helper Functions for ML Pipeline ──────────────────────────────────
+
+def candles_to_dataframe(candles: list, timeframe: str | None = None) -> pd.DataFrame:
+    """
+    Convert a list of candles (from get_candles_for_trigger) into a pandas DataFrame.
+
+    The input is the same format returned by get_candles_for_trigger():
+        [[Timestamp, Open, High, Low, Close, Volume], ...]
+
+    Args:
+        candles: list of lists, each containing [ts, open, high, low, close, volume].
+        timeframe: optional string (ignored in conversion, kept for consistency).
+
+    Returns:
+        pandas DataFrame with columns: ['Open','High','Low','Close','Volume']
+        and a DatetimeIndex (from the timestamp column).
+    """
+    if not candles:
+        return pd.DataFrame(columns=['Open','High','Low','Close','Volume'])
+
+    df = pd.DataFrame(candles, columns=['Timestamp','Open','High','Low','Close','Volume'])
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'], unit='s')
+    df.set_index('Timestamp', inplace=True)
+    return df
+
+def get_position(pos_id: int) -> dict | None:
+    """
+    Fetch a full position row by its id (including setup_type and features_json).
+
+    Args:
+        pos_id: position primary key.
+
+    Returns:
+        dict representation of the row, or None if not found.
+    """
+    with _db() as cur:
+        row = cur.execute("SELECT * FROM back_test_position WHERE id = ?", (pos_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def store_position_features(pos_id: int, features: dict, setup_type: str) -> None:
+    """
+    Update an existing position's setup_type and features_json.
+
+    Args:
+        pos_id: position primary key.
+        features: dict of feature values to store as JSON.
+        setup_type: string identifying the rule (e.g., 'trend_pullback').
+    """
+    with _db() as cur:
+        cur.execute("""
+            UPDATE back_test_position
+            SET setup_type = ?, features_json = ?
+            WHERE id = ?
+        """, (setup_type, json.dumps(features), pos_id))
+
+
+def get_position_features(pos_id: int) -> dict:
+    """
+    Retrieve the features JSON for a given position.
+
+    Args:
+        pos_id: position primary key.
+
+    Returns:
+        dict of features, or empty dict if none stored.
+    """
+    with _db() as cur:
+        row = cur.execute("SELECT features_json FROM back_test_position WHERE id = ?", (pos_id,)).fetchone()
+    if row is None or row[0] is None:
+        return {}
+    return json.loads(row[0])
+
+
+def get_candles_between(start_ts: int, end_ts: int, timeframe: str | None = None) -> pd.DataFrame:
+    """
+    Fetch historical candles between two timestamps as a DataFrame.
+
+    Args:
+        start_ts: unix timestamp (inclusive).
+        end_ts: unix timestamp (inclusive).
+        timeframe: candle interval (defaults to config.TRADING_TIME_FRAME).
+
+    Returns:
+        pandas DataFrame with columns: ['Timestamp','Open','High','Low','Close','Volume']
+        and a DatetimeIndex.
+    """
+    tf = timeframe or config.TRADING_TIME_FRAME
+    with _db() as cur:
+        rows = cur.execute("""
+            SELECT Timestamp, Open, High, Low, Close, Volume
+            FROM historical_candels
+            WHERE Timeframe = ? AND Timestamp BETWEEN ? AND ?
+            ORDER BY Timestamp ASC
+        """, (tf, start_ts, end_ts)).fetchall()
+    if not rows:
+        return pd.DataFrame(columns=['Timestamp','Open','High','Low','Close','Volume'])
+    df = pd.DataFrame(rows, columns=['Timestamp','Open','High','Low','Close','Volume'])
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'], unit='s')
+    df.set_index('Timestamp', inplace=True)
+    return df
+
+
 # ── Signals ───────────────────────────────────────────────────────────────────
 
 def save_signal(raw: str, parsed: dict) -> int:
@@ -545,7 +683,6 @@ def open_position(signal: dict, signal_id: int | None = None) -> int:
     """
     if signal.get("position") == "NO_TRADE":
         raise ValueError("Cannot open a NO_TRADE signal.")
-
     with _db() as cur:
         cur.execute("""
             INSERT INTO positions
@@ -574,13 +711,11 @@ def close_position(id: int, exit_price: float) -> dict | None:
     row = get_by_id(id)
     if row is None:
         return None
-
     pnl_pct = (
         (exit_price - row["entry"]) / row["entry"] * 100
         if row["position"] == "LONG"
         else (row["entry"] - exit_price) / row["entry"] * 100
     )
-
     with _db() as cur:
         cur.execute("""
             UPDATE positions
@@ -590,7 +725,6 @@ def close_position(id: int, exit_price: float) -> dict | None:
                    closed_at  = datetime('now')
              WHERE id = ?
         """, (exit_price, round(pnl_pct, 4), row["id"]))
-
     return {**dict(row), "exit_price": exit_price, "pnl_pct": round(pnl_pct, 4)}
 
 
@@ -619,6 +753,7 @@ def has_open_position(symbol: str | None = None) -> bool:
         else:
             cur.execute("SELECT 1 FROM positions WHERE status='OPEN' LIMIT 1")
         return cur.fetchone() is not None
+
 
 def get_by_id(id) -> sqlite3.Row | None:
     with _db() as cur:
@@ -651,7 +786,6 @@ def get_stats(symbol: str | None = None) -> dict:
     if symbol:
         where += " AND symbol=?"
         args   = (symbol,)
-
     with _db() as cur:
         cur.execute(f"""
             SELECT
@@ -663,11 +797,9 @@ def get_stats(symbol: str | None = None) -> dict:
             FROM positions {where}
         """, args)
         row = cur.fetchone()
-
     total    = row["total"] or 0
     wins     = row["wins"]  or 0
     win_rate = round(wins / total * 100, 1) if total else 0.0
-
     return {
         "symbol":        symbol or "ALL",
         "total_trades":  total,
@@ -687,7 +819,6 @@ def get_history(limit: int = 20, symbol: str | None = None) -> list[dict]:
     if symbol:
         where += " AND symbol=?"
         args   = (symbol,)
-
     with _db() as cur:
         cur.execute(
             f"SELECT * FROM positions {where} ORDER BY closed_at DESC LIMIT ?",
@@ -702,16 +833,13 @@ def print_summary() -> None:
     with _db() as cur:
         cur.execute("SELECT * FROM positions ORDER BY opened_at DESC")
         rows = cur.fetchall()
-
     if not rows:
         print("No positions recorded yet.")
         return
-
     fmt = "{:<4} {:<8} {:<6} {:<11} {:<9} {:<9} {:<9} {:<9} {:<8} {:<19}"
     hdr = fmt.format("ID", "SYMBOL", "DIR", "STATUS", "ENTRY", "SL", "TP", "EXIT", "PNL%", "OPENED")
     print(hdr)
     print("─" * len(hdr))
-
     for r in rows:
         pnl = f"{r['pnl_pct']:+.2f}%" if r["pnl_pct"] is not None else "—"
         ext = f"{r['exit_price']:.2f}"  if r["exit_price"] is not None else "—"
@@ -720,7 +848,6 @@ def print_summary() -> None:
             f"{r['entry']:.2f}", f"{r['stop_loss']:.2f}", f"{r['take_profit']:.2f}",
             ext, pnl, r["opened_at"][:19],
         ))
-
     print()
     s = get_stats()
     print(f"  Closed: {s['total_trades']}  |  "

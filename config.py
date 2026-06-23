@@ -77,7 +77,7 @@ MIN_CONFIDENCE = 60   # signals with lower confidence are skipped
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 6. File Paths
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PROMPT_FILE = str(ROOT / "prompts" / "trader_v7.txt")
+PROMPT_FILE = str(ROOT / "prompts" / "confirmer_v1.txt")
 OUTPUT_FILE = str(ROOT / "output"  / "market_data.txt")
 LOG_FILE    = str(ROOT / "logs"    / "signals.log")
 
@@ -130,6 +130,17 @@ for i in range(BACK_TEST_THREAD):
     BACK_TEST_OUTPUT_FILES.append(
         str(ROOT / "output" / f"market_data_{i}.txt")
     )
+
+# Rule Engine
+MIN_ATR_THRESHOLD = 0.01
+MIN_VOLUME_RATIO = 1.5
+TREND_ALIGNMENT_REQUIRED = True
+
+# Triple Barrier
+MAX_HOLDING_BARS = 30
+
+# Dataset
+DATASET_DIR = "dataset"
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 8. Exchange Execution  [FUTURE — uncomment when ready]
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
