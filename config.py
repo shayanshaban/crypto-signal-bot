@@ -122,7 +122,7 @@ BACK_TEST_CANDLES = {
 BACK_TEST_CHART_OUTPUT_FILE = str(ROOT / "output" / "backtest_chart.html")
 
 BACK_TEST_WARMUP_TRIM     = 500        # Trim base line to prevent out index error for historical data
-BACK_TEST_STATE_FILES     = [f"data/back_test/state_{i}.json" for i in range(BACK_TEST_THREAD)]
+BACK_TEST_STATE_FILES = [str(ROOT / "data" / "back_test" / f"state_{i}.json") for i in range(BACK_TEST_THREAD)]
 
 BACK_TEST_OUTPUT_FILES = []
 
@@ -137,10 +137,10 @@ MIN_VOLUME_RATIO = 1.5
 TREND_ALIGNMENT_REQUIRED = True
 
 # Triple Barrier
-MAX_HOLDING_BARS = 30
+MAX_HOLDING_BARS = 120
 
 # Dataset
-DATASET_DIR = "dataset"
+DATASET_DIR = str(ROOT / "dataset")
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 8. Exchange Execution  [FUTURE — uncomment when ready]
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -257,6 +257,81 @@ def should_ask_ai(candles: list, current_price: float | None = None) -> bool:
             return True
 
     return False
+def enrich_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Input:  DataFrame با ستون‌های Open, High, Low, Close, Volume
+    Output: همون DataFrame با ستون‌های indicator اضافه شده
+    
+    از همون منطق _ema، _rsi، _macd و ... که در baker.py هستن استفاده می‌کنه.
+    """
+    import pandas as pd  # اگه بالای فایل نیست اضافه کن
+    
+    df = df.copy()
+    c = df["Close"].to_numpy(dtype=float)
+    h = df["High"].to_numpy(dtype=float)
+    l = df["Low"].to_numpy(dtype=float)
+    v = df["Volume"].to_numpy(dtype=float)
+
+    # ── EMAs ──────────────────────────────────────────────────
+    for period in (9, 21, 50, 200):
+        e = _ema(c, period)
+        col = f"ema_{period}"
+        if e is not None:
+            # _ema خروجی کوتاه‌تر از c داره — align از آخر
+            out = np.full(len(c), np.nan)
+            out[len(c) - len(e):] = e
+            df[col] = out
+        else:
+            df[col] = np.nan
+
+    # ── RSI ───────────────────────────────────────────────────
+    rsi_vals = np.full(len(c), np.nan)
+    for i in range(15, len(c) + 1):
+        val = _rsi(c[:i], 14)
+        if val is not None:
+            rsi_vals[i - 1] = val
+    df["rsi"] = rsi_vals
+
+    # ── MACD ──────────────────────────────────────────────────
+    macd_vals = np.full(len(c), np.nan)
+    macd_hist = np.full(len(c), np.nan)
+    for i in range(35, len(c) + 1):
+        mv, ms, mh = _macd(c[:i])
+        if mv is not None:
+            macd_vals[i - 1] = mv
+            macd_hist[i - 1] = mh
+    df["macd"]      = macd_vals
+    df["macd_hist"] = macd_hist
+
+    # ── Bollinger Bands ───────────────────────────────────────
+    bb_pos_vals   = np.full(len(c), np.nan)
+    bb_width_vals = np.full(len(c), np.nan)
+    for i in range(20, len(c) + 1):
+        bu, bm, bl = _bollinger(c[:i], 20, 2.0)
+        if bu is not None and bu != bl:
+            bb_pos_vals[i - 1]   = (c[i-1] - bl) / (bu - bl)
+            bb_width_vals[i - 1] = (bu - bl) / bm
+    df["bb_position"] = bb_pos_vals
+    df["bb_width"]    = bb_width_vals
+
+    # ── ATR ───────────────────────────────────────────────────
+    atr_vals = np.full(len(c), np.nan)
+    for i in range(15, len(c) + 1):
+        val = _atr(h[:i], l[:i], c[:i], 14)
+        if val is not None:
+            atr_vals[i - 1] = val / c[i-1] if c[i-1] else np.nan
+    df["atr_percent"] = atr_vals
+
+    # ── Volume Ratio ──────────────────────────────────────────
+    vol_ratio = np.full(len(c), np.nan)
+    for i in range(21, len(c) + 1):
+        avg = v[i-21:i-1].mean()
+        if avg > 0:
+            vol_ratio[i - 1] = v[i-1] / avg
+    df["volume_ratio"] = vol_ratio
+
+    return df
+
 def process_data(candles: list, current_price: float | None = None) -> list[dict[str, Any]]:
     """
     Convert raw kline list  [[ts, o, h, l, c, v], ...]
