@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 from typing import Any
 import pandas as pd
-
+from tqdm import tqdm
 
 # ── indicator helpers ─────────────────────────────────────────────────────────
 
@@ -186,6 +186,135 @@ def _nearest_levels(levels: list[float], current_price: float, n: int = 3) -> di
         "nearest_resistances": above[:n],
     }
 
+def _ema_series(close: np.ndarray, period: int) -> np.ndarray:
+    n = len(close)
+    ema = np.full(n, np.nan, dtype=float)
+    if n < period:
+        return ema
+    k = 2.0 / (period + 1)
+    ema[period - 1] = close[:period].mean()          # مقدار اولیه SMA
+    for i in range(period, n):
+        ema[i] = close[i] * k + ema[i - 1] * (1 - k)
+    return ema
+
+# ── RSI: آرایه‌ی کامل (مقداردهی از اندیس 14 به بعد) ──────
+def _rsi_series(close: np.ndarray, period: int = 14) -> np.ndarray:
+    n = len(close)
+    rsi = np.full(n, np.nan, dtype=float)
+    if n < period + 1:
+        return rsi
+    delta = np.diff(close, prepend=np.nan)
+    gain = np.where(delta > 0, delta, 0.0)
+    loss = np.where(delta < 0, -delta, 0.0)
+    avg_gain = np.full(n, np.nan)
+    avg_loss = np.full(n, np.nan)
+    # اولین مقدار میانگین: میانگین ساده‌ی 14 کندل اول (دلتاها)
+    avg_gain[period] = gain[1:period+1].mean()      # gain[1] تا gain[period]
+    avg_loss[period] = loss[1:period+1].mean()
+    for i in range(period + 1, n):
+        avg_gain[i] = (avg_gain[i-1] * (period - 1) + gain[i]) / period
+        avg_loss[i] = (avg_loss[i-1] * (period - 1) + loss[i]) / period
+    rs = avg_gain / avg_loss
+    with np.errstate(divide='ignore', invalid='ignore'):
+        rsi = 100.0 - (100.0 / (1.0 + rs))
+    return rsi
+
+# ── Stochastic RSI: آرایه‌ی کامل ──────────────────────────
+def _stoch_rsi_series(close: np.ndarray, rsi_period: int = 14, stoch_period: int = 14) -> np.ndarray:
+    n = len(close)
+    stoch = np.full(n, np.nan, dtype=float)
+    if n < rsi_period + stoch_period + 1:
+        return stoch
+    rsi_vals = _rsi_series(close, rsi_period)
+    s = pd.Series(rsi_vals)
+    min_rsi = s.rolling(stoch_period).min().to_numpy()
+    max_rsi = s.rolling(stoch_period).max().to_numpy()
+    denom = max_rsi - min_rsi
+    denom[denom == 0] = np.nan
+    stoch = (rsi_vals - min_rsi) / denom * 100.0
+    # در حلقه‌ی قدیمی اگر یکی از RSIها NaN بود None برمی‌گشت → ما NaN داریم
+    return stoch
+
+# ── MACD: سه آرایه macd_line, signal, histogram (طول N) ─
+def _macd_series(close: np.ndarray, fast: int = 12, slow: int = 26, signal: int = 9):
+    n = len(close)
+    macd_line = np.full(n, np.nan)
+    signal_line = np.full(n, np.nan)
+    hist = np.full(n, np.nan)
+    if n < slow + signal:
+        return macd_line, signal_line, hist
+    ema_fast = _ema_series(close, fast)
+    ema_slow = _ema_series(close, slow)
+    raw_macd = ema_fast - ema_slow
+    ema_signal = _ema_series(raw_macd, signal)
+    # در حلقه‌ی اصلی از i=35 شروع می‌کرد (اندیس 34 اولین مقدار)
+    start = slow + signal - 2  # 26+9-2 = 33
+    first_valid = max(start, 0)
+    if n > first_valid:
+        macd_line[first_valid:] = raw_macd[first_valid:]
+        signal_line[first_valid:] = ema_signal[first_valid:]
+        hist[first_valid:] = macd_line[first_valid:] - signal_line[first_valid:]
+    return macd_line, signal_line, hist
+
+# ── ATR: آرایه‌ی کامل (وایلدر) ─────────────────────────────
+def _atr_series(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = 14) -> np.ndarray:
+    n = len(close)
+    atr = np.full(n, np.nan)
+    if n < period + 1:
+        return atr
+    prev_close = np.roll(close, 1)
+    prev_close[0] = np.nan
+    tr = np.maximum(high - low,
+                    np.maximum(np.abs(high - prev_close),
+                               np.abs(low - prev_close)))
+    atr[period] = tr[1:period+1].mean()               # tr[1] تا tr[period] (14 مقدار)
+    for i in range(period + 1, n):
+        atr[i] = (atr[i-1] * (period - 1) + tr[i]) / period
+    return atr
+
+# ── بولینگر: سه آرایه upper, mid, lower (طول N) ──────────
+def _bollinger_series(close: np.ndarray, period: int = 20, nbdev: float = 2.0):
+    n = len(close)
+    mid = np.full(n, np.nan)
+    upper = np.full(n, np.nan)
+    lower = np.full(n, np.nan)
+    if n < period:
+        return upper, mid, lower
+    s = pd.Series(close)
+    mid = s.rolling(period).mean().to_numpy()
+    # ddof=0 برای تطابق با std() پیش‌فرض NumPy (تقسیم بر N)
+    std = s.rolling(period).std(ddof=0).to_numpy()
+    upper = mid + nbdev * std
+    lower = mid - nbdev * std
+    return upper, mid, lower
+
+# ── OBV و روند آن ────────────────────────────────────────
+def _obv_series(close: np.ndarray, volume: np.ndarray) -> np.ndarray:
+    n = len(close)
+    if n == 0:
+        return np.array([])
+    direction = np.sign(np.diff(close, prepend=close[0]))
+    obv = np.cumsum(np.where(direction == 1, volume,
+                             np.where(direction == -1, -volume, 0.0)))
+    return obv
+
+def _obv_trend_series(close: np.ndarray, volume: np.ndarray, lookback: int = 5) -> np.ndarray:
+    n = len(close)
+    trend = np.full(n, np.nan)
+    if n < lookback + 1:
+        return trend
+    obv = _obv_series(close, volume)
+    s = pd.Series(obv)
+    ma = s.rolling(lookback).mean().to_numpy()
+    for i in range(lookback, n):
+        if not np.isnan(ma[i]):
+            if obv[i] > ma[i]:
+                trend[i] = 1
+            elif obv[i] < ma[i]:
+                trend[i] = -1
+            else:
+                trend[i] = 0
+    return trend
 
 # ── public API ────────────────────────────────────────────────────────────────
 def should_ask_ai(candles: list, current_price: float | None = None) -> bool:
@@ -259,12 +388,7 @@ def should_ask_ai(candles: list, current_price: float | None = None) -> bool:
 
     return False
 
-def enrich_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Convert raw OHLCV DataFrame into a fully featured DataFrame.
-    Each row gets all indicators that process_data would produce for that
-    candle, as individual columns.
-    """
+def enrich_dataframe(df: pd.DataFrame, show_progress: bool = False) -> pd.DataFrame:
     df = df.copy()
     c = df["Close"].to_numpy(dtype=float)
     h = df["High"].to_numpy(dtype=float)
@@ -273,109 +397,91 @@ def enrich_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     v = df["Volume"].to_numpy(dtype=float)
     N = len(c)
 
-    # ── قیمت‌های اولیه ───────────────────────────────────────
+    if show_progress:
+        pbar = tqdm(total=14, desc="Enriching OHLCV data", unit="step")
+    else:
+        pbar = None
+
+    # ── قیمت‌ها و Change % ────────────────────────────────
     df["Close"] = c
     df["Open"]  = o
     df["High"]  = h
     df["Low"]   = l
-    df["Change %"] = np.full(N, np.nan)
+    change = np.full(N, np.nan)
     if N >= 2:
-        df.loc[df.index[1:], "Change %"] = (c[1:] - c[:-1]) / c[:-1] * 100
+        change[1:] = np.diff(c) / c[:-1] * 100
+    df["Change %"] = change
 
-    # ── محدوده‌ی دوره ────────────────────────────────────────
-    period_high = np.array([h[:i+1].max() for i in range(N)])
-    period_low  = np.array([l[:i+1].min() for i in range(N)])
+    # ── محدوده‌ی دوره (O(N)) ─────────────────────────────
+    period_high = np.maximum.accumulate(h)
+    period_low  = np.minimum.accumulate(l)
     df["Period high"] = period_high
     df["Period low"]  = period_low
     pos_in_range = (c - period_low) / (period_high - period_low) * 100
     pos_in_range[np.isnan(pos_in_range)] = 50.0
     df["Position in period range"] = pos_in_range
+    if pbar: pbar.update(1)
 
-    # ── EMA ───────────────────────────────────────────────────
+    # ── EMA ها ───────────────────────────────────────────
     for period in (9, 21, 50, 200):
-        e = _ema(c, period)
-        col = f"EMA{period}"
-        out = np.full(N, np.nan)
-        if e is not None:
-            out[N - len(e):] = e
-            df[col] = out
-            with np.errstate(divide='ignore', invalid='ignore'):
-                diff = (c - out) / out * 100
-                diff[np.isinf(diff)] = np.nan
-            df[f"Price vs EMA{period}"] = diff
-        else:
-            df[col] = np.nan
-            df[f"Price vs EMA{period}"] = np.nan
+        e = _ema_series(c, period)
+        df[f"EMA{period}"] = e
+        with np.errstate(divide='ignore', invalid='ignore'):
+            diff = (c - e) / e * 100
+            diff[np.isinf(diff)] = np.nan
+        df[f"Price vs EMA{period}"] = diff
+    e9, e21, e50, e200 = df["EMA9"].values, df["EMA21"].values, df["EMA50"].values, df["EMA200"].values
+    if pbar: pbar.update(1)
 
-    e9 = df["EMA9"].values if "EMA9" in df.columns else np.full(N, np.nan)
-    e21 = df["EMA21"].values if "EMA21" in df.columns else np.full(N, np.nan)
-    e50 = df["EMA50"].values if "EMA50" in df.columns else np.full(N, np.nan)
-    e200 = df["EMA200"].values if "EMA200" in df.columns else np.full(N, np.nan)
-
-    # ── EMA alignment (عددی) ─────────────────────────────────
+    # ── EMA alignment / cross ────────────────────────────
     align = np.zeros(N)
-    mask_bull = (e9 > e21) & (e21 > e50)
-    mask_bear = (e9 < e21) & (e21 < e50)
-    align[mask_bull] = 1
-    align[mask_bear] = -1
+    align[(e9 > e21) & (e21 > e50)] = 1
+    align[(e9 < e21) & (e21 < e50)] = -1
     align[np.isnan(e9) | np.isnan(e21) | np.isnan(e50)] = np.nan
     df["EMA alignment"] = align
 
-    # ── EMA50 vs EMA200 (عددی) ────────────────────────────────
     cross_zone = np.zeros(N)
     cross_zone[e50 > e200] = 1
     cross_zone[e50 < e200] = -1
     cross_zone[np.isnan(e50) | np.isnan(e200)] = np.nan
     df["EMA50 vs EMA200"] = cross_zone
+    if pbar: pbar.update(1)
 
-    # ── RSI ───────────────────────────────────────────────────
-    rsi_arr = np.full(N, np.nan)
-    for i in range(15, N+1):
-        val = _rsi(c[:i], 14)
-        if val is not None:
-            rsi_arr[i-1] = val
+    # ── RSI ──────────────────────────────────────────────
+    rsi_arr = _rsi_series(c, 14)
     df["RSI(14)"] = rsi_arr
     rsi_zone = np.full(N, np.nan, dtype=object)
     rsi_zone[rsi_arr >= 70] = "overbought"
     rsi_zone[rsi_arr <= 30] = "oversold"
     rsi_zone[(rsi_arr > 50) & (rsi_arr < 70)] = "bullish zone"
     rsi_zone[(rsi_arr > 30) & (rsi_arr < 50)] = "bearish zone"
-    rsi_zone[(rsi_arr >= 50) & (rsi_arr <= 55)] = "neutral"  # for completeness
+    rsi_zone[(rsi_arr >= 50) & (rsi_arr <= 55)] = "neutral"
     rsi_zone[(rsi_arr >= 45) & (rsi_arr < 50)] = "neutral"
     df["RSI zone"] = rsi_zone
+    if pbar: pbar.update(1)
 
-    # ── Stoch RSI ─────────────────────────────────────────────
-    stoch_arr = np.full(N, np.nan)
-    for i in range(29, N+1):
-        val = _stoch_rsi(c[:i], 14, 14)
-        if val is not None:
-            stoch_arr[i-1] = val
+    # ── Stoch RSI ────────────────────────────────────────
+    stoch_arr = _stoch_rsi_series(c, 14, 14)
     df["Stoch RSI"] = stoch_arr
     stoch_zone = np.full(N, np.nan, dtype=object)
     stoch_zone[stoch_arr >= 80] = "overbought"
     stoch_zone[stoch_arr <= 20] = "oversold"
     stoch_zone[(stoch_arr > 20) & (stoch_arr < 80)] = "neutral"
     df["Stoch RSI zone"] = stoch_zone
+    if pbar: pbar.update(1)
 
-    # ── MACD ──────────────────────────────────────────────────
-    macd_line = np.full(N, np.nan)
-    macd_sig  = np.full(N, np.nan)
-    macd_hist = np.full(N, np.nan)
-    for i in range(35, N+1):
-        mv, ms, mh = _macd(c[:i])
-        if mv is not None:
-            macd_line[i-1] = mv
-            macd_sig[i-1]  = ms
-            macd_hist[i-1] = mh
+    # ── MACD ─────────────────────────────────────────────
+    macd_line, macd_sig, macd_hist = _macd_series(c)
     df["MACD line"]      = macd_line
     df["MACD signal"]    = macd_sig
     df["MACD histogram"] = macd_hist
     macd_pos = np.full(N, np.nan, dtype=object)
-    macd_pos[macd_line > macd_sig]  = "above signal"
-    macd_pos[macd_line < macd_sig]  = "below signal"
+    macd_pos[macd_line > macd_sig] = "above signal"
+    macd_pos[macd_line < macd_sig] = "below signal"
     df["MACD position"] = macd_pos
+    if pbar: pbar.update(1)
 
-    # ── MACD cross (عددی) ─────────────────────────────────────
+    # ── MACD cross ───────────────────────────────────────
     macd_cross = np.zeros(N)
     for i in range(1, N):
         if np.isnan(macd_line[i]) or np.isnan(macd_sig[i]) or np.isnan(macd_line[i-1]) or np.isnan(macd_sig[i-1]):
@@ -386,97 +492,70 @@ def enrich_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             macd_cross[i] = 1
         elif prev_above and not curr_above:
             macd_cross[i] = -1
-    # صفر در بقیه حالت‌ها باقی می‌ماند (no cross)
     df["MACD cross"] = macd_cross
+    if pbar: pbar.update(1)
 
-    # ── Bollinger Bands ───────────────────────────────────────
-    bb_u = np.full(N, np.nan)
-    bb_m = np.full(N, np.nan)
-    bb_l = np.full(N, np.nan)
-    bb_width = np.full(N, np.nan)
-    bb_pos   = np.full(N, np.nan)
-    for i in range(20, N+1):
-        bu, bm, bl = _bollinger(c[:i], 20, 2.0)
-        if bu is not None:
-            bb_u[i-1] = bu
-            bb_m[i-1] = bm
-            bb_l[i-1] = bl
-            bb_width[i-1] = (bu - bl) / bm * 100 if bm != 0 else np.nan
-            bb_pos[i-1] = (c[i-1] - bl) / (bu - bl) * 100 if bu != bl else 50.0
-    df["BB upper"]    = bb_u
-    df["BB mid"]      = bb_m
-    df["BB lower"]    = bb_l
-    df["BB width %"]  = bb_width
+    # ── Bollinger Bands ──────────────────────────────────
+    bb_u, bb_m, bb_l = _bollinger_series(c, 20, 2.0)
+    df["BB upper"] = bb_u
+    df["BB mid"]   = bb_m
+    df["BB lower"] = bb_l
+    bb_width = np.where(bb_m != 0, (bb_u - bb_l) / bb_m * 100, np.nan)
+    df["BB width %"] = bb_width
+    bb_pos = np.where(bb_u != bb_l, (c - bb_l) / (bb_u - bb_l) * 100, 50.0)
     df["BB position"] = bb_pos
-
     bb_signal = np.full(N, np.nan, dtype=object)
     bb_signal[c > bb_u] = "above upper"
     bb_signal[c < bb_l] = "below lower"
     bb_signal[(c >= bb_l) & (c <= bb_u)] = "inside bands"
     df["BB signal"] = bb_signal
     df["BB squeeze"] = np.where(bb_width < 2.0, "yes", "no")
+    if pbar: pbar.update(1)
 
-    # ── ATR ───────────────────────────────────────────────────
-    atr_abs = np.full(N, np.nan)
-    atr_pct = np.full(N, np.nan)
-    for i in range(15, N+1):
-        val = _atr(h[:i], l[:i], c[:i], 14)
-        if val is not None:
-            atr_abs[i-1] = val
-            atr_pct[i-1] = val / c[i-1] if c[i-1] != 0 else np.nan
-    df["ATR(14)"]      = atr_abs
-    df["ATR % price"]  = atr_pct
+    # ── ATR ──────────────────────────────────────────────
+    atr_abs = _atr_series(h, l, c, 14)
+    df["ATR(14)"] = atr_abs
+    atr_pct = np.where(c != 0, atr_abs / c, np.nan)
+    df["ATR % price"] = atr_pct
+    if pbar: pbar.update(1)
 
-    # ── Volume ────────────────────────────────────────────────
+    # ── Volume ───────────────────────────────────────────
     df["Volume"] = v
-    vol_avg = np.full(N, np.nan)
-    for i in range(20, N):
-        vol_avg[i] = v[i-19:i+1].mean()
+    vol_avg = pd.Series(v).rolling(20, min_periods=1).mean().to_numpy().copy()
+    vol_avg[:19] = np.nan
     df["Volume avg(20)"] = vol_avg
     with np.errstate(divide='ignore', invalid='ignore'):
         vol_ratio = v / vol_avg
         vol_ratio[np.isinf(vol_ratio)] = np.nan
     df["Volume ratio"] = vol_ratio
-
     vol_signal = np.full(N, np.nan, dtype=object)
     vol_signal[vol_ratio >= 2.0] = "very high"
     vol_signal[(vol_ratio >= 1.3) & (vol_ratio < 2.0)] = "above average"
     vol_signal[vol_ratio <= 0.5] = "very low"
     vol_signal[(vol_ratio > 0.5) & (vol_ratio < 1.3)] = "normal"
     df["Volume signal"] = vol_signal
+    if pbar: pbar.update(1)
 
-    # ── Volume trend (عددی) ───────────────────────────────────
+    # ── Volume trend (برداری) ────────────────────────────
     vol_trend = np.zeros(N)
     if N >= 10:
-        for i in range(10, N+1):
-            cur5 = v[i-5:i].mean()
-            prev5 = v[i-10:i-5].mean()
-            if cur5 > prev5 * 1.1:
-                vol_trend[i-1] = 1
-            elif cur5 < prev5 * 0.9:
-                vol_trend[i-1] = -1
+        cur5 = pd.Series(v).rolling(5).mean().to_numpy()
+        prev5 = pd.Series(v).shift(5).rolling(5).mean().to_numpy()
+        vol_trend = np.where(cur5 > prev5 * 1.1, 1,
+                             np.where(cur5 < prev5 * 0.9, -1, 0))
+        vol_trend[:9] = 0
     df["Volume trend"] = vol_trend
 
-    # ── OBV trend (عددی) ──────────────────────────────────────
-    obv_trend = np.full(N, np.nan)
-    for i in range(6, N+1):
-        trend = _obv_trend(c[:i], v[:i], lookback=5)
-        if trend == "rising":
-            obv_trend[i-1] = 1
-        elif trend == "falling":
-            obv_trend[i-1] = -1
-        else:
-            obv_trend[i-1] = 0
-    df["OBV trend"] = obv_trend
+    # ── OBV trend (برداری) ───────────────────────────────
+    df["OBV trend"] = _obv_trend_series(c, v, lookback=5)
+    if pbar: pbar.update(1)
 
-    # ── Market structure (کل دوره) ────────────────────────────
-    ms = _market_structure(c)
-    df["Market structure"] = ms
+    # ── Market structure (بدون تغییر) ────────────────────
+    df["Market structure"] = _market_structure(c)
+    if pbar: pbar.update(1)
 
-    # ── Candle type & Engulfing ───────────────────────────────
-    ct = np.full(N, None, dtype=object)
-    for i in range(N):
-        ct[i] = _candle_type(o[i], h[i], l[i], c[i])
+    # ── Candle type, Engulfing, Last 3 candles ───────────
+    ct = np.array([_candle_type(o[i], h[i], l[i], c[i]) for i in range(N)], dtype=object)
     df["Candle type"] = ct
 
     engulf = np.full(N, None, dtype=object)
@@ -484,19 +563,17 @@ def enrich_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         engulf[i] = _engulfing(o[i-1], c[i-1], o[i], c[i])
     df["Engulfing"] = engulf
 
-    # ── Last 3 candles direction ──────────────────────────────
     last3 = np.full(N, None, dtype=object)
     for i in range(2, N):
-        parts = []
-        for j in range(i-2, i+1):
-            parts.append("bull" if c[j] > o[j] else "bear")
+        parts = ["bull" if c[j] > o[j] else "bear" for j in range(i-2, i+1)]
         last3[i] = " → ".join(parts)
     df["Last 3 candles"] = last3
+    if pbar: pbar.update(1)
 
-    # ── Distance to support / resistance (%) ──────────────────
+    # ── Distance to support / resistance (همان حلقه‌ی قبلی) ─
     dist_support = np.full(N, np.nan)
     dist_resistance = np.full(N, np.nan)
-    for i in range(50, N + 1):   # ۵۰ کندل حداقلی برای swing points
+    for i in range(50, N + 1):
         sh, sl = _swing_points(h[:i], l[:i], lookback=3)
         levels = _nearest_levels(sh + sl, c[i-1], n=1)
         if levels["nearest_supports"]:
@@ -507,199 +584,11 @@ def enrich_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             dist_resistance[i-1] = (res - c[i-1]) / c[i-1] * 100
     df["Distance to support %"] = dist_support
     df["Distance to resistance %"] = dist_resistance
+    if pbar:
+        pbar.update(1)
+        pbar.close()
 
     return df
-
-def process_data(candles: list, current_price: float | None = None) -> list[dict[str, Any]]:
-    """
-    Convert raw kline list  [[ts, o, h, l, c, v], ...]
-    → list[{"label": str, "value": any}]
-
-    Candles are assumed oldest-first.
-    `current_price` (optional) — real-time market price, used as the
-    reference point for nearest support/resistance levels. Falls back
-    to this timeframe's own last close if not provided.
-    """
-    if not candles or len(candles) < 2:
-        return [{"label": "error", "value": "insufficient data"}]
-
-    o = np.array([float(c[1]) for c in candles])
-    h = np.array([float(c[2]) for c in candles])
-    l = np.array([float(c[3]) for c in candles])
-    c = np.array([float(c[4]) for c in candles])
-    v = np.array([float(c[5]) for c in candles])
-
-    result: list[dict] = []
-
-    def r(label: str, value: Any) -> None:
-        result.append({"label": label, "value": value})
-
-    last_c = float(c[-1])
-    prev_c = float(c[-2])
-
-    # ── price snapshot ────────────────────────────────────────────────────────
-    r("Close",    round(last_c,         8))
-    r("Open",     round(float(o[-1]),   8))
-    r("High",     round(float(h[-1]),   8))
-    r("Low",      round(float(l[-1]),   8))
-    r("Change %", round((last_c - prev_c) / prev_c * 100, 3))
-
-    # ── period range ──────────────────────────────────────────────────────────
-    p_high = float(h.max())
-    p_low  = float(l.min())
-    pos    = (last_c - p_low) / (p_high - p_low) * 100 if p_high != p_low else 50.0
-    r("Period high",              round(p_high, 8))
-    r("Period low",               round(p_low,  8))
-    r("Position in period range", f"{round(pos, 1)}%")
-
-    # ── EMAs ──────────────────────────────────────────────────────────────────
-    emas: dict[int, float | None] = {}
-    for period in (9, 21, 50, 200):
-        e = _ema(c, period)
-        if e is not None:
-            val       = round(float(e[-1]), 8)
-            diff_pct  = round((last_c - val) / val * 100, 2)
-            emas[period] = val
-            r(f"EMA{period}",          val)
-            r(f"Price vs EMA{period}", f"{'+' if diff_pct >= 0 else ''}{diff_pct}%")
-        else:
-            emas[period] = None
-
-    e9, e21, e50, e200 = emas.get(9), emas.get(21), emas.get(50), emas.get(200)
-
-    if e9 and e21 and e50:
-        if e9 > e21 > e50:   align = "bull (9>21>50)"
-        elif e9 < e21 < e50: align = "bear (9<21<50)"
-        else:                align = "mixed"
-        r("EMA alignment", align)
-
-    if e50 and e200:
-        r("EMA50 vs EMA200",
-          "golden cross zone" if e50 > e200 else "death cross zone")
-
-    # ── RSI ───────────────────────────────────────────────────────────────────
-    rsi = _rsi(c, 14)
-    if rsi is not None:
-        r("RSI(14)", rsi)
-        r("RSI zone",
-          "overbought"   if rsi >= 70 else
-          "oversold"     if rsi <= 30 else
-          "bullish zone" if rsi >= 55 else
-          "bearish zone" if rsi <= 45 else
-          "neutral")
-
-    srsi = _stoch_rsi(c)
-    if srsi is not None:
-        r("Stoch RSI", srsi)
-        r("Stoch RSI zone",
-          "overbought" if srsi >= 80 else
-          "oversold"   if srsi <= 20 else
-          "neutral")
-
-    # ── MACD ──────────────────────────────────────────────────────────────────
-    macd_v, macd_s, macd_h = _macd(c)
-    if macd_v is not None:
-        r("MACD line",      macd_v)
-        r("MACD signal",    macd_s)
-        r("MACD histogram", macd_h)
-        r("MACD position",  "above signal" if macd_v > macd_s else "below signal")
-
-        prev_mv, prev_ms, _ = _macd(c[:-1])
-        if prev_mv is not None:
-            if   not (prev_mv > prev_ms) and (macd_v > macd_s): cross = "bullish_cross"
-            elif (prev_mv > prev_ms) and not (macd_v > macd_s): cross = "bearish_cross"
-            else:                                                cross = "none"
-            r("MACD cross", cross)
-
-    # ── Bollinger Bands ───────────────────────────────────────────────────────
-    bb_u, bb_m, bb_l = _bollinger(c, 20, 2.0)
-    if bb_u is not None:
-        bb_width = round((bb_u - bb_l) / bb_m * 100, 2)
-        bb_pos   = round((last_c - bb_l) / (bb_u - bb_l) * 100, 1) if bb_u != bb_l else 50.0
-        r("BB upper",    round(bb_u, 8))
-        r("BB mid",      round(bb_m, 8))
-        r("BB lower",    round(bb_l, 8))
-        r("BB width %",  bb_width)
-        r("BB position", f"{bb_pos}%")
-        r("BB signal",
-          "above upper" if last_c > bb_u else
-          "below lower" if last_c < bb_l else
-          "inside bands")
-        r("BB squeeze", "yes" if bb_width < 2.0 else "no")
-
-    # ── ATR ───────────────────────────────────────────────────────────────────
-    atr = _atr(h, l, c, 14)
-    if atr is not None:
-        r("ATR(14)",     atr)
-        r("ATR % price", f"{round(atr / last_c * 100, 2)}%")
-
-    # ── Volume ────────────────────────────────────────────────────────────────
-    vol_avg = float(v[-21:-1].mean()) if len(v) >= 21 else float(v[:-1].mean())
-    vol_r   = round(float(v[-1]) / vol_avg, 2) if vol_avg else 1.0
-    r("Volume",         round(float(v[-1]), 2))
-    r("Volume avg(20)", round(vol_avg, 2))
-    r("Volume ratio",   f"{vol_r}x")
-    r("Volume signal",
-      "very high"     if vol_r >= 2.0 else
-      "above average" if vol_r >= 1.3 else
-      "very low"      if vol_r <= 0.5 else
-      "normal")
-
-    if len(v) >= 10:
-        r("Volume trend",
-          "increasing" if v[-5:].mean() > v[-10:-5].mean() * 1.1 else
-          "decreasing" if v[-5:].mean() < v[-10:-5].mean() * 0.9 else
-          "flat")
-
-    r("OBV trend", _obv_trend(c, v, lookback=5))
-
-    # ── market structure ──────────────────────────────────────────────────────
-    r("Market structure", _market_structure(c))
-
-    # ── swing levels ─────────────────────────────────────────────────────────
-    sh, sl = _swing_points(h, l, lookback=3)
-    ref_price = current_price if current_price is not None else last_c
-    levels = _nearest_levels(sh + sl, ref_price, n=3)
-    if levels["nearest_resistances"]:
-        r("Nearest resistances (closest first)", levels["nearest_resistances"])
-    if levels["nearest_supports"]:
-        r("Nearest supports (closest first)",    levels["nearest_supports"])
-
-    # ── candle patterns ───────────────────────────────────────────────────────
-    r("Last candle", _candle_type(float(o[-1]), float(h[-1]), float(l[-1]), last_c))
-
-    eng = _engulfing(float(o[-2]), float(c[-2]), float(o[-1]), last_c)
-    if eng:
-        r("Engulfing", eng)
-
-    r("Last 3 candles",
-      " → ".join("bull" if c[i] > o[i] else "bear" for i in range(-3, 0)))
-
-    # ── summary bias ──────────────────────────────────────────────────────────
-    bull = bear = 0
-    if rsi:
-        if rsi > 55: bull += 1
-        elif rsi < 45: bear += 1
-    if macd_v:
-        if macd_v > 0: bull += 1
-        elif macd_v < 0: bear += 1
-    if e9 and e21:
-        if e9 > e21: bull += 1
-        else:        bear += 1
-    if last_c > prev_c: bull += 1
-    else:               bear += 1
-    if bb_m:
-        if last_c > bb_m: bull += 1
-        else:             bear += 1
-
-    r("Bull signals", bull)
-    r("Bear signals", bear)
-    r("Bias",
-      "bullish" if bull > bear else
-      "bearish" if bear > bull else
-      "neutral")
-
-    return result
 
 def calculate_reward_r(
     side: str,

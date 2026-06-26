@@ -32,8 +32,8 @@ MAX_HOLDING_CANDLES = 20
 TARGET_SETUP = SetupType.RSI_DIVERGENCE
 def run_thread(thread_state: dict) -> None:
     thread_index = thread_state["thread_index"]
-    start_id = thread_state["start_id"]
-    end_id = thread_state["end_id"]
+    start_ts = thread_state["start_ts"]
+    end_ts = thread_state["end_ts"]
 
     # هر thread منابع جداگانه داره
     res = _make_per_thread_resources()
@@ -44,7 +44,7 @@ def run_thread(thread_state: dict) -> None:
 
 
     while True:
-        candle = db.get_next_baseline_candle_in_range(start_id, end_id)
+        candle = db.get_next_baseline_candle_in_range(start_ts, end_ts)
         if candle is None:
             thread_state["status"] = "done"
             st.save_thread_state(thread_index, thread_state)
@@ -57,6 +57,7 @@ def run_thread(thread_state: dict) -> None:
         candidates = rule_engine.detect_setups(
             df_window, config.SYMBOL_DISPLAY, config.TRADING_TIME_FRAME
         )
+        baseline_timestamp = candle["Timestamp"]
         baseline_id = candle["id"]
         timestamp = candle["Timestamp"]
         for candidate in candidates:
@@ -86,7 +87,7 @@ def run_thread(thread_state: dict) -> None:
                     )
             
             
-            future_candles = db.get_future_candles(baseline_id)
+            future_candles = db.get_future_candles(baseline_timestamp)
             exit_price = None
             for candle in future_candles:
 
@@ -134,7 +135,7 @@ def run_thread(thread_state: dict) -> None:
                 result_r)
         
         db.mark_baseline_candle_checked(baseline_id)
-        thread_state["last_processed_id"] = baseline_id
+        thread_state["last_processed_ts"] = baseline_timestamp
         st.save_thread_state(thread_index, thread_state)
         # if candle is None:
         #     thread_state["status"] = "done"
@@ -276,8 +277,8 @@ def _progress_bar_loop(stop_event: threading.Event) -> None:
 # -----------------------------------------------------------------
 def start_backtest() -> None:
     
-    ids = db.get_baseline_ids(trim=config.BACK_TEST_WARMUP_TRIM)
-    chunks = st.split_ids_into_chunks(ids, config.BACK_TEST_THREAD)
+    timestamps = db.get_baseline_timestamps(trim=config.BACK_TEST_WARMUP_TRIM)
+    chunks = st.split_ranges_into_chunks(timestamps, config.BACK_TEST_THREAD)
     thread_states = [
         st.init_thread_state(i, chunk[0], chunk[-1])
         for i, chunk in enumerate(chunks) if chunk
@@ -290,6 +291,7 @@ def full_start():
     fetcher.get_historical_data()
     db.rebuild_baseline_from_historical(config.TRADING_TIME_FRAME)
 
+    print("Enriching Data....(It Take Several Minutes)")
     candles = db.get_all_baseline()
     df_window = db.candles_to_dataframe(candles)
     df_window = enrich_dataframe(df_window)

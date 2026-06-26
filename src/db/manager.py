@@ -317,6 +317,10 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_enriched_candle_id
         ON enriched_candles(candle_id);
         """)
+        cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_baseline_timestamp
+        ON back_test_candels_base_line(Timestamp);
+        """)
         # --- MIGRATION: add new columns if they don't exist (for existing databases) ---
         # This ensures we don't break existing installations.
         try:
@@ -786,48 +790,72 @@ def get_baseline_ids(trim: int = 0) -> list[int]:
     ids = [r[0] for r in rows]
     return ids[trim:]
 
-
-def get_next_baseline_candle_in_range(start_id: int, end_id: int) -> dict | None:
+def get_baseline_timestamps(trim: int = 0) -> list[int]:
     """
-    Return the next unchecked candle (oldest first) within [start_id, end_id],
-    scoped to a single thread's slice of the baseline.
+    Return all baseline timestamps in chronological order.
+    """
+    with _db() as cur:
+        rows = cur.execute("""
+            SELECT Timestamp
+            FROM back_test_candels_base_line
+            ORDER BY Timestamp ASC
+        """).fetchall()
+
+    timestamps = [r[0] for r in rows]
+    return timestamps[trim:]
+
+def get_next_baseline_candle_in_range(
+    start_timestamp: int,
+    end_timestamp: int
+) -> dict | None:
+    """
+    Return the next unchecked candle (oldest first) within
+    [start_timestamp, end_timestamp].
     """
     with _db() as cur:
         row = cur.execute("""
             SELECT id, Timestamp, Open, High, Low, Close, Volume, Timeframe
             FROM back_test_candels_base_line
-            WHERE id BETWEEN ? AND ? AND IsChecked = FALSE
+            WHERE Timestamp BETWEEN ? AND ?
+              AND IsChecked = FALSE
             ORDER BY Timestamp ASC
             LIMIT 1
-        """, (start_id, end_id)).fetchone()
+        """, (start_timestamp, end_timestamp)).fetchone()
+
         if row is None:
             return None
+
         return {
-            "id": row[0], "Timestamp": row[1], "Open": row[2],
-            "High": row[3], "Low": row[4], "Close": row[5],
-            "Volume": row[6], "Timeframe": row[7],
+            "id": row["id"],
+            "Timestamp": row["Timestamp"],
+            "Open": row["Open"],
+            "High": row["High"],
+            "Low": row["Low"],
+            "Close": row["Close"],
+            "Volume": row["Volume"],
+            "Timeframe": row["Timeframe"],
         }
 
-def get_future_candles(start_id: int, limit: int = 1000):
+def get_future_candles(start_timestamp: int, limit: int = 1000):
     with _db() as cur:
         rows = cur.execute("""
             SELECT id, Timestamp, Open, High, Low, Close, Volume, Timeframe
             FROM back_test_candels_base_line
-            WHERE id > ?
-            ORDER BY id ASC
+            WHERE Timestamp > ?
+            ORDER BY Timestamp ASC
             LIMIT ?
-        """, (start_id, limit)).fetchall()
+        """, (start_timestamp, limit)).fetchall()
 
     return [
         {
-            "id": r[0],
-            "Timestamp": r[1],
-            "Open": r[2],
-            "High": r[3],
-            "Low": r[4],
-            "Close": r[5],
-            "Volume": r[6],
-            "Timeframe": r[7],
+            "id": r["id"],
+            "Timestamp": r["Timestamp"],
+            "Open": r["Open"],
+            "High": r["High"],
+            "Low": r["Low"],
+            "Close": r["Close"],
+            "Volume": r["Volume"],
+            "Timeframe": r["Timeframe"],
         }
         for r in rows
     ]

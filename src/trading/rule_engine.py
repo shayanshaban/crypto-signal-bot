@@ -61,7 +61,8 @@ class RuleEngine:
         # 1. اطمینان از وجود اندیکاتورهای مورد نیاز (اگر enrich_dataframe اجرا نشده باشد)
         if "EMA alignment" not in df.columns:
             df = enrich_dataframe(df.copy())
-
+        if len(df) < 2:
+            return []
         # 2. اجرای تمام آشکارسازها
         candidates.extend(self._detect_trend_pullback(df, symbol, timeframe))
         candidates.extend(self._detect_breakout(df, symbol, timeframe))

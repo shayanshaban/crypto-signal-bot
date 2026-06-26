@@ -8,14 +8,14 @@ from pathlib import Path
 import config
 
 
-def init_thread_state(thread_index: int, start_id: int, end_id: int) -> dict:
+def init_thread_state(thread_index: int, start_ts: int, end_ts: int) -> dict:
     state = {
         "thread_index": thread_index,
-        "start_id": start_id,
-        "end_id": end_id,
-        "last_processed_id": None,
+        "start_ts": start_ts,
+        "end_ts": end_ts,
+        "last_processed_ts": None,
         "open_position_id": None,
-        "status": "running",   # running / done
+        "status": "running",
     }
     save_thread_state(thread_index, state)
     return state
@@ -36,8 +36,8 @@ def load_thread_state(thread_index: int) -> dict | None:
         return json.load(f)
 
 
-def split_ids_into_chunks(ids: list[int], n_threads: int) -> list[list[int]]:
-    """Split a sorted id list into n_threads contiguous, near-equal chunks."""
+def split_ranges_into_chunks(ids: list[int], n_threads: int) -> list[list[int]]:
+    """Split a sorted timestamp list into n contiguous chunks."""
     chunk_size = len(ids) // n_threads
     chunks = []
     for i in range(n_threads):

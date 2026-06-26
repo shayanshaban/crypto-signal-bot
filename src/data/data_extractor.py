@@ -2,7 +2,7 @@ import zipfile
 from pathlib import Path
 
 import pandas as pd
-
+from src.data.baker import enrich_dataframe
 import config
 from src.db            import manager as db
 import json
@@ -42,6 +42,10 @@ def import_zip_folder(folder: str):
     folder = Path(folder)
     imported = load_import_state(folder)
     for zip_path in folder.glob("*.zip"):
+        if zip_path.name in imported:
+            print(f"Skip {zip_path.name}")
+            continue
+
         print(f"Importing {zip_path.name}")
 
         with zipfile.ZipFile(zip_path) as z:
@@ -72,3 +76,11 @@ def import_zip_folder(folder: str):
         save_import_state(folder, imported)
 
         print(f"Saved {len(candles)} candles")
+
+    db.rebuild_baseline_from_historical(config.TRADING_TIME_FRAME)
+
+    print("Enriching Data....(It Take Several Minutes)")
+    candles = db.get_all_baseline()
+    df_window = db.candles_to_dataframe(candles)
+    df_window = enrich_dataframe(df_window,True)
+    db.insert_enriched_dataframe(df_window,config.SYMBOL_DISPLAY,config.TRADING_TIME_FRAME)
