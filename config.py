@@ -131,6 +131,8 @@ for i in range(BACK_TEST_THREAD):
         str(ROOT / "output" / f"market_data_{i}.txt")
     )
 
+IMPORT_DATA_FOLDER_DIR = str(ROOT / "historical_data")
+
 # Rule Engine
 MIN_ATR_THRESHOLD = 0.01
 MIN_VOLUME_RATIO = 1.5

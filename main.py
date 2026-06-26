@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import config
 from src.data          import fetcher
+from src.data          import data_extractor
 from src.ai            import deepseek_client
 from src.db            import manager as db
 from src.trading       import signal_handler
@@ -125,6 +126,10 @@ def main() -> None:
         output_html=config.BACK_TEST_CHART_OUTPUT_FILE,
         )
         webbrowser.open(config.BACK_TEST_CHART_OUTPUT_FILE)
+    elif args[0] == "import-data":
+        data_extractor.import_zip_folder(config.IMPORT_DATA_FOLDER_DIR)
+    elif args[0] == "clear-historical":
+        db.reset_back_test_db(True)
     else:
         print(__doc__)
         sys.exit(1)

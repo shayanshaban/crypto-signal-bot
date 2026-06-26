@@ -63,14 +63,14 @@ class RuleEngine:
             df = enrich_dataframe(df.copy())
 
         # 2. اجرای تمام آشکارسازها
-        # candidates.extend(self._detect_trend_pullback(df, symbol, timeframe))
-        # candidates.extend(self._detect_breakout(df, symbol, timeframe))
-        # candidates.extend(self._detect_ema_cross(df, symbol, timeframe))
-        # candidates.extend(self._detect_mean_reversion(df, symbol, timeframe))
-        # candidates.extend(self._detect_liquidity_sweep(df, symbol, timeframe))
-        # candidates.extend(self._detect_bb_squeeze_breakout(df, symbol, timeframe))
-        # candidates.extend(self._detect_macd_cross(df, symbol, timeframe))
-        # candidates.extend(self._detect_rsi_divergence(df, symbol, timeframe))
+        candidates.extend(self._detect_trend_pullback(df, symbol, timeframe))
+        candidates.extend(self._detect_breakout(df, symbol, timeframe))
+        candidates.extend(self._detect_ema_cross(df, symbol, timeframe))
+        candidates.extend(self._detect_mean_reversion(df, symbol, timeframe))
+        candidates.extend(self._detect_liquidity_sweep(df, symbol, timeframe))
+        candidates.extend(self._detect_bb_squeeze_breakout(df, symbol, timeframe))
+        candidates.extend(self._detect_macd_cross(df, symbol, timeframe))
+        candidates.extend(self._detect_rsi_divergence(df, symbol, timeframe))
         candidates.extend(self._detect_pinbar_confirm(df, symbol, timeframe))
         # 3. اعمال فیلترهای سخت
         return [c for c in candidates if self._passes_hard_filters(c, df)]

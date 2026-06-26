@@ -29,6 +29,8 @@ logs/*.db
 data/back_test/*.json
 !output/.gitkeep
 !logs/.gitkeep
+historical_data/*
+!historical_data/.gitkeep
 
 # ── IDEs ─────────────────────────────────────────────────────
 .vscode/
