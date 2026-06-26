@@ -8,6 +8,7 @@ Public API:
 from __future__ import annotations
 import numpy as np
 from typing import Any
+import pandas as pd
 
 
 # ── indicator helpers ─────────────────────────────────────────────────────────
@@ -257,78 +258,255 @@ def should_ask_ai(candles: list, current_price: float | None = None) -> bool:
             return True
 
     return False
+
 def enrich_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Input:  DataFrame با ستون‌های Open, High, Low, Close, Volume
-    Output: همون DataFrame با ستون‌های indicator اضافه شده
-    
-    از همون منطق _ema، _rsi، _macd و ... که در baker.py هستن استفاده می‌کنه.
+    Convert raw OHLCV DataFrame into a fully featured DataFrame.
+    Each row gets all indicators that process_data would produce for that
+    candle, as individual columns.
     """
-    import pandas as pd  # اگه بالای فایل نیست اضافه کن
-    
     df = df.copy()
     c = df["Close"].to_numpy(dtype=float)
     h = df["High"].to_numpy(dtype=float)
     l = df["Low"].to_numpy(dtype=float)
+    o = df["Open"].to_numpy(dtype=float)
     v = df["Volume"].to_numpy(dtype=float)
+    N = len(c)
 
-    # ── EMAs ──────────────────────────────────────────────────
+    # ── قیمت‌های اولیه ───────────────────────────────────────
+    df["Close"] = c
+    df["Open"]  = o
+    df["High"]  = h
+    df["Low"]   = l
+    df["Change %"] = np.full(N, np.nan)
+    if N >= 2:
+        df.loc[df.index[1:], "Change %"] = (c[1:] - c[:-1]) / c[:-1] * 100
+
+    # ── محدوده‌ی دوره ────────────────────────────────────────
+    period_high = np.array([h[:i+1].max() for i in range(N)])
+    period_low  = np.array([l[:i+1].min() for i in range(N)])
+    df["Period high"] = period_high
+    df["Period low"]  = period_low
+    pos_in_range = (c - period_low) / (period_high - period_low) * 100
+    pos_in_range[np.isnan(pos_in_range)] = 50.0
+    df["Position in period range"] = pos_in_range
+
+    # ── EMA ───────────────────────────────────────────────────
     for period in (9, 21, 50, 200):
         e = _ema(c, period)
-        col = f"ema_{period}"
+        col = f"EMA{period}"
+        out = np.full(N, np.nan)
         if e is not None:
-            # _ema خروجی کوتاه‌تر از c داره — align از آخر
-            out = np.full(len(c), np.nan)
-            out[len(c) - len(e):] = e
+            out[N - len(e):] = e
             df[col] = out
+            with np.errstate(divide='ignore', invalid='ignore'):
+                diff = (c - out) / out * 100
+                diff[np.isinf(diff)] = np.nan
+            df[f"Price vs EMA{period}"] = diff
         else:
             df[col] = np.nan
+            df[f"Price vs EMA{period}"] = np.nan
+
+    e9 = df["EMA9"].values if "EMA9" in df.columns else np.full(N, np.nan)
+    e21 = df["EMA21"].values if "EMA21" in df.columns else np.full(N, np.nan)
+    e50 = df["EMA50"].values if "EMA50" in df.columns else np.full(N, np.nan)
+    e200 = df["EMA200"].values if "EMA200" in df.columns else np.full(N, np.nan)
+
+    # ── EMA alignment (عددی) ─────────────────────────────────
+    align = np.zeros(N)
+    mask_bull = (e9 > e21) & (e21 > e50)
+    mask_bear = (e9 < e21) & (e21 < e50)
+    align[mask_bull] = 1
+    align[mask_bear] = -1
+    align[np.isnan(e9) | np.isnan(e21) | np.isnan(e50)] = np.nan
+    df["EMA alignment"] = align
+
+    # ── EMA50 vs EMA200 (عددی) ────────────────────────────────
+    cross_zone = np.zeros(N)
+    cross_zone[e50 > e200] = 1
+    cross_zone[e50 < e200] = -1
+    cross_zone[np.isnan(e50) | np.isnan(e200)] = np.nan
+    df["EMA50 vs EMA200"] = cross_zone
 
     # ── RSI ───────────────────────────────────────────────────
-    rsi_vals = np.full(len(c), np.nan)
-    for i in range(15, len(c) + 1):
+    rsi_arr = np.full(N, np.nan)
+    for i in range(15, N+1):
         val = _rsi(c[:i], 14)
         if val is not None:
-            rsi_vals[i - 1] = val
-    df["rsi"] = rsi_vals
+            rsi_arr[i-1] = val
+    df["RSI(14)"] = rsi_arr
+    rsi_zone = np.full(N, np.nan, dtype=object)
+    rsi_zone[rsi_arr >= 70] = "overbought"
+    rsi_zone[rsi_arr <= 30] = "oversold"
+    rsi_zone[(rsi_arr > 50) & (rsi_arr < 70)] = "bullish zone"
+    rsi_zone[(rsi_arr > 30) & (rsi_arr < 50)] = "bearish zone"
+    rsi_zone[(rsi_arr >= 50) & (rsi_arr <= 55)] = "neutral"  # for completeness
+    rsi_zone[(rsi_arr >= 45) & (rsi_arr < 50)] = "neutral"
+    df["RSI zone"] = rsi_zone
+
+    # ── Stoch RSI ─────────────────────────────────────────────
+    stoch_arr = np.full(N, np.nan)
+    for i in range(29, N+1):
+        val = _stoch_rsi(c[:i], 14, 14)
+        if val is not None:
+            stoch_arr[i-1] = val
+    df["Stoch RSI"] = stoch_arr
+    stoch_zone = np.full(N, np.nan, dtype=object)
+    stoch_zone[stoch_arr >= 80] = "overbought"
+    stoch_zone[stoch_arr <= 20] = "oversold"
+    stoch_zone[(stoch_arr > 20) & (stoch_arr < 80)] = "neutral"
+    df["Stoch RSI zone"] = stoch_zone
 
     # ── MACD ──────────────────────────────────────────────────
-    macd_vals = np.full(len(c), np.nan)
-    macd_hist = np.full(len(c), np.nan)
-    for i in range(35, len(c) + 1):
+    macd_line = np.full(N, np.nan)
+    macd_sig  = np.full(N, np.nan)
+    macd_hist = np.full(N, np.nan)
+    for i in range(35, N+1):
         mv, ms, mh = _macd(c[:i])
         if mv is not None:
-            macd_vals[i - 1] = mv
-            macd_hist[i - 1] = mh
-    df["macd"]      = macd_vals
-    df["macd_hist"] = macd_hist
+            macd_line[i-1] = mv
+            macd_sig[i-1]  = ms
+            macd_hist[i-1] = mh
+    df["MACD line"]      = macd_line
+    df["MACD signal"]    = macd_sig
+    df["MACD histogram"] = macd_hist
+    macd_pos = np.full(N, np.nan, dtype=object)
+    macd_pos[macd_line > macd_sig]  = "above signal"
+    macd_pos[macd_line < macd_sig]  = "below signal"
+    df["MACD position"] = macd_pos
+
+    # ── MACD cross (عددی) ─────────────────────────────────────
+    macd_cross = np.zeros(N)
+    for i in range(1, N):
+        if np.isnan(macd_line[i]) or np.isnan(macd_sig[i]) or np.isnan(macd_line[i-1]) or np.isnan(macd_sig[i-1]):
+            continue
+        prev_above = macd_line[i-1] > macd_sig[i-1]
+        curr_above = macd_line[i]   > macd_sig[i]
+        if not prev_above and curr_above:
+            macd_cross[i] = 1
+        elif prev_above and not curr_above:
+            macd_cross[i] = -1
+    # صفر در بقیه حالت‌ها باقی می‌ماند (no cross)
+    df["MACD cross"] = macd_cross
 
     # ── Bollinger Bands ───────────────────────────────────────
-    bb_pos_vals   = np.full(len(c), np.nan)
-    bb_width_vals = np.full(len(c), np.nan)
-    for i in range(20, len(c) + 1):
+    bb_u = np.full(N, np.nan)
+    bb_m = np.full(N, np.nan)
+    bb_l = np.full(N, np.nan)
+    bb_width = np.full(N, np.nan)
+    bb_pos   = np.full(N, np.nan)
+    for i in range(20, N+1):
         bu, bm, bl = _bollinger(c[:i], 20, 2.0)
-        if bu is not None and bu != bl:
-            bb_pos_vals[i - 1]   = (c[i-1] - bl) / (bu - bl)
-            bb_width_vals[i - 1] = (bu - bl) / bm
-    df["bb_position"] = bb_pos_vals
-    df["bb_width"]    = bb_width_vals
+        if bu is not None:
+            bb_u[i-1] = bu
+            bb_m[i-1] = bm
+            bb_l[i-1] = bl
+            bb_width[i-1] = (bu - bl) / bm * 100 if bm != 0 else np.nan
+            bb_pos[i-1] = (c[i-1] - bl) / (bu - bl) * 100 if bu != bl else 50.0
+    df["BB upper"]    = bb_u
+    df["BB mid"]      = bb_m
+    df["BB lower"]    = bb_l
+    df["BB width %"]  = bb_width
+    df["BB position"] = bb_pos
+
+    bb_signal = np.full(N, np.nan, dtype=object)
+    bb_signal[c > bb_u] = "above upper"
+    bb_signal[c < bb_l] = "below lower"
+    bb_signal[(c >= bb_l) & (c <= bb_u)] = "inside bands"
+    df["BB signal"] = bb_signal
+    df["BB squeeze"] = np.where(bb_width < 2.0, "yes", "no")
 
     # ── ATR ───────────────────────────────────────────────────
-    atr_vals = np.full(len(c), np.nan)
-    for i in range(15, len(c) + 1):
+    atr_abs = np.full(N, np.nan)
+    atr_pct = np.full(N, np.nan)
+    for i in range(15, N+1):
         val = _atr(h[:i], l[:i], c[:i], 14)
         if val is not None:
-            atr_vals[i - 1] = val / c[i-1] if c[i-1] else np.nan
-    df["atr_percent"] = atr_vals
+            atr_abs[i-1] = val
+            atr_pct[i-1] = val / c[i-1] if c[i-1] != 0 else np.nan
+    df["ATR(14)"]      = atr_abs
+    df["ATR % price"]  = atr_pct
 
-    # ── Volume Ratio ──────────────────────────────────────────
-    vol_ratio = np.full(len(c), np.nan)
-    for i in range(21, len(c) + 1):
-        avg = v[i-21:i-1].mean()
-        if avg > 0:
-            vol_ratio[i - 1] = v[i-1] / avg
-    df["volume_ratio"] = vol_ratio
+    # ── Volume ────────────────────────────────────────────────
+    df["Volume"] = v
+    vol_avg = np.full(N, np.nan)
+    for i in range(20, N):
+        vol_avg[i] = v[i-19:i+1].mean()
+    df["Volume avg(20)"] = vol_avg
+    with np.errstate(divide='ignore', invalid='ignore'):
+        vol_ratio = v / vol_avg
+        vol_ratio[np.isinf(vol_ratio)] = np.nan
+    df["Volume ratio"] = vol_ratio
+
+    vol_signal = np.full(N, np.nan, dtype=object)
+    vol_signal[vol_ratio >= 2.0] = "very high"
+    vol_signal[(vol_ratio >= 1.3) & (vol_ratio < 2.0)] = "above average"
+    vol_signal[vol_ratio <= 0.5] = "very low"
+    vol_signal[(vol_ratio > 0.5) & (vol_ratio < 1.3)] = "normal"
+    df["Volume signal"] = vol_signal
+
+    # ── Volume trend (عددی) ───────────────────────────────────
+    vol_trend = np.zeros(N)
+    if N >= 10:
+        for i in range(10, N+1):
+            cur5 = v[i-5:i].mean()
+            prev5 = v[i-10:i-5].mean()
+            if cur5 > prev5 * 1.1:
+                vol_trend[i-1] = 1
+            elif cur5 < prev5 * 0.9:
+                vol_trend[i-1] = -1
+    df["Volume trend"] = vol_trend
+
+    # ── OBV trend (عددی) ──────────────────────────────────────
+    obv_trend = np.full(N, np.nan)
+    for i in range(6, N+1):
+        trend = _obv_trend(c[:i], v[:i], lookback=5)
+        if trend == "rising":
+            obv_trend[i-1] = 1
+        elif trend == "falling":
+            obv_trend[i-1] = -1
+        else:
+            obv_trend[i-1] = 0
+    df["OBV trend"] = obv_trend
+
+    # ── Market structure (کل دوره) ────────────────────────────
+    ms = _market_structure(c)
+    df["Market structure"] = ms
+
+    # ── Candle type & Engulfing ───────────────────────────────
+    ct = np.full(N, None, dtype=object)
+    for i in range(N):
+        ct[i] = _candle_type(o[i], h[i], l[i], c[i])
+    df["Candle type"] = ct
+
+    engulf = np.full(N, None, dtype=object)
+    for i in range(1, N):
+        engulf[i] = _engulfing(o[i-1], c[i-1], o[i], c[i])
+    df["Engulfing"] = engulf
+
+    # ── Last 3 candles direction ──────────────────────────────
+    last3 = np.full(N, None, dtype=object)
+    for i in range(2, N):
+        parts = []
+        for j in range(i-2, i+1):
+            parts.append("bull" if c[j] > o[j] else "bear")
+        last3[i] = " → ".join(parts)
+    df["Last 3 candles"] = last3
+
+    # ── Distance to support / resistance (%) ──────────────────
+    dist_support = np.full(N, np.nan)
+    dist_resistance = np.full(N, np.nan)
+    for i in range(50, N + 1):   # ۵۰ کندل حداقلی برای swing points
+        sh, sl = _swing_points(h[:i], l[:i], lookback=3)
+        levels = _nearest_levels(sh + sl, c[i-1], n=1)
+        if levels["nearest_supports"]:
+            sup = levels["nearest_supports"][0]
+            dist_support[i-1] = (c[i-1] - sup) / c[i-1] * 100
+        if levels["nearest_resistances"]:
+            res = levels["nearest_resistances"][0]
+            dist_resistance[i-1] = (res - c[i-1]) / c[i-1] * 100
+    df["Distance to support %"] = dist_support
+    df["Distance to resistance %"] = dist_resistance
 
     return df
 
@@ -522,3 +700,37 @@ def process_data(candles: list, current_price: float | None = None) -> list[dict
       "neutral")
 
     return result
+
+def calculate_reward_r(
+    side: str,
+    entry_price: float,
+    exit_price: float,
+    stop_loss: float,
+) -> float:
+    """
+    Calculate trade result in R units.
+
+    Returns:
+        +2.0 => profit equal to 2R
+        -1.0 => stop loss hit
+        +0.5 => half R profit
+        -0.3 => 0.3R loss
+    """
+
+    side = side.upper()
+
+    if side == "LONG":
+        risk = entry_price - stop_loss
+        profit = exit_price - entry_price
+
+    elif side == "SHORT":
+        risk = stop_loss - entry_price
+        profit = entry_price - exit_price
+
+    else:
+        raise ValueError("side must be LONG or SHORT")
+
+    if risk <= 0:
+        raise ValueError("Invalid stop loss")
+
+    return round(profit / risk, 4)

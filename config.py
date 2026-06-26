@@ -107,7 +107,7 @@ TIMEFRAME_LABELS = {
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 8. BackTester Setting
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BACK_TEST_THREAD = 2    # The Concurency of back testing
+BACK_TEST_THREAD = 8    # The Concurency of back testing
 
 BACK_TEST_WAIT_AFTER_ASK_AI = 10
 

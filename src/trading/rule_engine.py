@@ -1,10 +1,15 @@
-""" src/trading/rule_engine.py — Rule-based setup detection with hard filters. """
+"""
+src/trading/rule_engine.py — Rule-based setup detection with hard filters.
+(Optimised: uses numerical features from baker.enrich_dataframe)
+"""
 
 import pandas as pd
 import numpy as np
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 from enum import Enum
+
+from src.data.baker import enrich_dataframe
 
 
 class SetupType(Enum):
@@ -14,6 +19,9 @@ class SetupType(Enum):
     MEAN_REVERSION = "mean_reversion"
     LIQUIDITY_SWEEP = "liquidity_sweep"
     BB_SQUEEZE_BREAKOUT = "bb_squeeze_breakout"
+    MACD_CROSS = "macd_cross"
+    RSI_DIVERGENCE = "rsi_divergence"
+    PINBAR_CONFIRM = "pinbar_confirm"
 
 
 @dataclass
@@ -31,9 +39,12 @@ class SetupCandidate:
 
 
 class RuleEngine:
-    """Detects trading setups using deterministic rules + hard filters."""
+    """Detects trading setups using deterministic rules + hard filters.
 
-    def __init__(self, min_atr_threshold: float = 0.01,
+    Requires DataFrame enriched by baker.enrich_dataframe.
+    """
+
+    def __init__(self, min_atr_threshold: float = 0.005,
                  min_volume_ratio: float = 1.5,
                  trend_alignment_required: bool = True):
         self.min_atr_threshold = min_atr_threshold
@@ -47,229 +58,421 @@ class RuleEngine:
         """
         candidates = []
 
-        # Calculate all indicators once
-        df = self._add_indicators(df)
+        # 1. اطمینان از وجود اندیکاتورهای مورد نیاز (اگر enrich_dataframe اجرا نشده باشد)
+        if "EMA alignment" not in df.columns:
+            df = enrich_dataframe(df.copy())
 
-        # Detect each setup type
-        candidates.extend(self._detect_trend_pullback(df, symbol, timeframe))
-        candidates.extend(self._detect_breakout(df, symbol, timeframe))
-        candidates.extend(self._detect_ema_cross(df, symbol, timeframe))
-        candidates.extend(self._detect_mean_reversion(df, symbol, timeframe))
-        candidates.extend(self._detect_liquidity_sweep(df, symbol, timeframe))
-        candidates.extend(self._detect_bb_squeeze_breakout(df, symbol, timeframe))
-
-        # Apply hard filters
+        # 2. اجرای تمام آشکارسازها
+        # candidates.extend(self._detect_trend_pullback(df, symbol, timeframe))
+        # candidates.extend(self._detect_breakout(df, symbol, timeframe))
+        # candidates.extend(self._detect_ema_cross(df, symbol, timeframe))
+        # candidates.extend(self._detect_mean_reversion(df, symbol, timeframe))
+        # candidates.extend(self._detect_liquidity_sweep(df, symbol, timeframe))
+        # candidates.extend(self._detect_bb_squeeze_breakout(df, symbol, timeframe))
+        # candidates.extend(self._detect_macd_cross(df, symbol, timeframe))
+        # candidates.extend(self._detect_rsi_divergence(df, symbol, timeframe))
+        candidates.extend(self._detect_pinbar_confirm(df, symbol, timeframe))
+        # 3. اعمال فیلترهای سخت
         return [c for c in candidates if self._passes_hard_filters(c, df)]
 
-    def _add_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add all technical indicators needed for setup detection."""
-        df = df.copy()
-
-        # EMAs
-        for period in [9, 21, 50, 200]:
-            df[f'ema_{period}'] = df['Close'].ewm(span=period, adjust=False).mean()
-
-        # ATR
-        high_low = df['High'] - df['Low']
-        high_close = np.abs(df['High'] - df['Close'].shift())
-        low_close = np.abs(df['Low'] - df['Close'].shift())
-        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-        df['atr'] = tr.rolling(14).mean()
-        df['atr_percent'] = df['atr'] / df['Close'] * 100
-
-        # RSI
-        delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        rs = gain / loss
-        df['rsi'] = 100 - (100 / (1 + rs))
-
-        # Bollinger Bands
-        df['bb_middle'] = df['Close'].rolling(20).mean()
-        bb_std = df['Close'].rolling(20).std()
-        df['bb_upper'] = df['bb_middle'] + 2 * bb_std
-        df['bb_lower'] = df['bb_middle'] - 2 * bb_std
-        df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['bb_middle']
-        df['bb_position'] = (df['Close'] - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'])
-
-        # Volume
-        df['volume_ma'] = df['Volume'].rolling(20).mean()
-        df['volume_ratio'] = df['Volume'] / df['volume_ma']
-
-        # MACD
-        exp1 = df['Close'].ewm(span=12, adjust=False).mean()
-        exp2 = df['Close'].ewm(span=26, adjust=False).mean()
-        df['macd'] = exp1 - exp2
-        df['macd_signal'] = df['macd'].ewm(span=9, adjust=False).mean()
-        df['macd_hist'] = df['macd'] - df['macd_signal']
-
-        return df
+    # ── آشکارسازهای Setup ─────────────────────────────────────────────────
 
     def _detect_trend_pullback(self, df: pd.DataFrame, symbol: str, tf: str) -> List[SetupCandidate]:
-        """Detect pullback to EMA in an established trend."""
+        """Pullback به EMA21 در یک روند صعودی مستقر (EMA alignment = 1)."""
         candidates = []
         latest = df.iloc[-1]
 
-        # Trend: price above EMA50 and EMA50 > EMA200
-        if not (latest['Close'] > latest['ema_50'] > latest['ema_200']):
+        # روند صعودی: EMA alignment == 1
+        if latest.get("EMA alignment", 0) != 1:
             return candidates
 
-        # Pullback: price near EMA21 (within 0.5%)
-        pullback = abs(latest['Close'] - latest['ema_21']) / latest['ema_21'] < 0.005
+        # Pullback: قیمت نزدیک EMA21 (اختلاف کمتر از 0.5%)
+        ema21 = latest.get("EMA21")
+        if pd.isna(ema21) or ema21 == 0:
+            return candidates
+        pullback = abs(latest['Close'] - ema21) / ema21 < 0.005
 
         if pullback:
+            atr_pct = latest.get("ATR % price", 0.01)
+            sl = latest['Close'] * (1 - 2 * atr_pct)
+            tp = latest['Close'] * (1 + 4 * atr_pct)
             candidates.append(SetupCandidate(
                 setup_type=SetupType.TREND_PULLBACK,
-                symbol=symbol,
-                side="LONG",
-                timeframe=tf,
+                symbol=symbol, side="LONG", timeframe=tf,
                 entry_price=latest['Close'],
-                stop_loss=latest['Close'] * 0.98,  # 2% stop
-                take_profit=latest['Close'] * 1.04,  # 4% target
+                stop_loss=sl,
+                take_profit=tp,
                 features=self._extract_features(latest),
-                timestamp=int(latest.name.timestamp()) if hasattr(latest.name, 'timestamp') else 0
+                timestamp=self._get_timestamp(latest)
             ))
         return candidates
 
     def _detect_breakout(self, df: pd.DataFrame, symbol: str, tf: str) -> List[SetupCandidate]:
-        """Detect breakout above resistance with volume confirmation."""
+        """شکست مقاومت نزدیک (فاصله‌ی کمتر از 0.5%) با تأیید حجم."""
         candidates = []
         latest = df.iloc[-1]
-        prev = df.iloc[-2]
 
-        # Find recent resistance (highest high of last 20 bars)
-        resistance = df['High'].rolling(20).max().iloc[-2]
+        dist_res = latest.get("Distance to resistance %")
+        if pd.isna(dist_res) or dist_res >= 0.5:
+            return candidates
 
-        # Breakout: close above resistance + volume spike
-        if latest['Close'] > resistance and latest['volume_ratio'] > 1.5:
-            candidates.append(SetupCandidate(
-                setup_type=SetupType.BREAKOUT,
-                symbol=symbol,
-                side="LONG",
-                timeframe=tf,
-                entry_price=latest['Close'],
-                stop_loss=resistance * 0.99,
-                take_profit=latest['Close'] * 1.03,
-                features=self._extract_features(latest),
-                timestamp=int(latest.name.timestamp()) if hasattr(latest.name, 'timestamp') else 0
-            ))
+        # حجم بالا
+        if latest.get("Volume ratio", 0) < self.min_volume_ratio:
+            return candidates
+
+        # می‌توان آستانه‌ی شکست را سخت‌گیرانه‌تر گذاشت (مثلاً قیمت بالاتر از مقاومت قبلی)
+        resistance = latest['Close'] * (1 + dist_res / 100)   # تخمین قیمت مقاومت
+        if latest['Close'] <= resistance:
+            return candidates
+
+        sl = max(resistance * 0.99, latest['Close'] * 0.98)
+        tp = latest['Close'] * 1.03
+        candidates.append(SetupCandidate(
+            setup_type=SetupType.BREAKOUT,
+            symbol=symbol, side="LONG", timeframe=tf,
+            entry_price=latest['Close'],
+            stop_loss=sl,
+            take_profit=tp,
+            features=self._extract_features(latest),
+            timestamp=self._get_timestamp(latest)
+        ))
         return candidates
 
     def _detect_ema_cross(self, df: pd.DataFrame, symbol: str, tf: str) -> List[SetupCandidate]:
-        """Detect EMA9 crossing above EMA21."""
+        """کراس EMA9 به بالای EMA21 با حجم بالاتر از میانگین."""
         candidates = []
         latest = df.iloc[-1]
         prev = df.iloc[-2]
 
-        if (prev['ema_9'] <= prev['ema_21'] and
-            latest['ema_9'] > latest['ema_21'] and
-            latest['volume_ratio'] > 1.2):
+        if (prev['EMA9'] <= prev['EMA21'] and
+            latest['EMA9'] > latest['EMA21'] and
+            latest.get("Volume ratio", 0) > 1.2):
+            sl = latest['Close'] * 0.985
+            tp = latest['Close'] * 1.035
             candidates.append(SetupCandidate(
                 setup_type=SetupType.EMA_CROSS,
-                symbol=symbol,
-                side="LONG",
-                timeframe=tf,
+                symbol=symbol, side="LONG", timeframe=tf,
                 entry_price=latest['Close'],
-                stop_loss=latest['Close'] * 0.985,
-                take_profit=latest['Close'] * 1.035,
+                stop_loss=sl,
+                take_profit=tp,
                 features=self._extract_features(latest),
-                timestamp=int(latest.name.timestamp()) if hasattr(latest.name, 'timestamp') else 0
+                timestamp=self._get_timestamp(latest)
             ))
         return candidates
 
     def _detect_mean_reversion(self, df: pd.DataFrame, symbol: str, tf: str) -> List[SetupCandidate]:
-        """Detect oversold bounce setup."""
+        """بازگشت به میانگین: RSI زیر ۳۰ و قیمت نزدیک حمایت (فاصله‌ی کمتر از ۲٪)."""
         candidates = []
         latest = df.iloc[-1]
 
-        # RSI < 30 and price near lower BB
-        if latest['rsi'] < 30 and latest['bb_position'] < 0.1:
-            candidates.append(SetupCandidate(
-                setup_type=SetupType.MEAN_REVERSION,
-                symbol=symbol,
-                side="LONG",
-                timeframe=tf,
-                entry_price=latest['Close'],
-                stop_loss=latest['Close'] * 0.99,
-                take_profit=latest['bb_middle'],
-                features=self._extract_features(latest),
-                timestamp=int(latest.name.timestamp()) if hasattr(latest.name, 'timestamp') else 0
-            ))
+        if latest.get("RSI(14)", 50) >= 30:
+            return candidates
+        dist_sup = latest.get("Distance to support %")
+        if pd.isna(dist_sup) or dist_sup >= 2.0:
+            return candidates
+
+        # ورود در محدوده‌ی حمایتی
+        sl = latest['Close'] * 0.99
+        tp = latest.get("BB mid", latest['Close'] * 1.02)   # هدف: میانگین بولینگر
+        candidates.append(SetupCandidate(
+            setup_type=SetupType.MEAN_REVERSION,
+            symbol=symbol, side="LONG", timeframe=tf,
+            entry_price=latest['Close'],
+            stop_loss=sl,
+            take_profit=tp,
+            features=self._extract_features(latest),
+            timestamp=self._get_timestamp(latest)
+        ))
         return candidates
 
     def _detect_liquidity_sweep(self, df: pd.DataFrame, symbol: str, tf: str) -> List[SetupCandidate]:
-        """Detect sweep of recent lows with reversal."""
+        """شکار نقدینگی: شکست کف ۲۰ کندلی و بسته شدن مجدد بالای آن + بالای EMA21."""
         candidates = []
         latest = df.iloc[-1]
         prev = df.iloc[-2]
-
-        # Sweep: price breaks below recent low then closes back above
         recent_low = df['Low'].rolling(20).min().iloc[-2]
+
         if (prev['Low'] < recent_low and
             latest['Close'] > recent_low and
-            latest['Close'] > latest['ema_21']):
+            latest['Close'] > latest['EMA21']):
+            sl = recent_low * 0.995
+            tp = latest['Close'] * 1.03
             candidates.append(SetupCandidate(
                 setup_type=SetupType.LIQUIDITY_SWEEP,
-                symbol=symbol,
-                side="LONG",
-                timeframe=tf,
+                symbol=symbol, side="LONG", timeframe=tf,
                 entry_price=latest['Close'],
-                stop_loss=recent_low * 0.995,
-                take_profit=latest['Close'] * 1.03,
+                stop_loss=sl,
+                take_profit=tp,
                 features=self._extract_features(latest),
-                timestamp=int(latest.name.timestamp()) if hasattr(latest.name, 'timestamp') else 0
+                timestamp=self._get_timestamp(latest)
             ))
         return candidates
 
     def _detect_bb_squeeze_breakout(self, df: pd.DataFrame, symbol: str, tf: str) -> List[SetupCandidate]:
-        """Detect Bollinger Band squeeze followed by breakout."""
+        """فشردگی بولینگر و شکست با حجم بالا."""
         candidates = []
         latest = df.iloc[-1]
+        bb_width_20 = df['BB width %'].rolling(20).min().iloc[-2]
 
-        # Squeeze: BB width near 20-period minimum
-        bb_width_20 = df['bb_width'].rolling(20).min().iloc[-2]
-        if (df['bb_width'].iloc[-2] < bb_width_20 * 1.1 and
-            latest['bb_width'] > bb_width_20 * 1.2 and
-            latest['volume_ratio'] > 1.5):
+        if (df['BB width %'].iloc[-2] < bb_width_20 * 1.1 and
+            latest['BB width %'] > bb_width_20 * 1.2 and
+            latest.get("Volume ratio", 0) > 1.5):
+            side = "LONG" if latest['Close'] > latest['BB mid'] else "SHORT"
+            sl_mult = 0.985 if side == "LONG" else 1.015
+            tp_mult = 1.04 if side == "LONG" else 0.96
             candidates.append(SetupCandidate(
                 setup_type=SetupType.BB_SQUEEZE_BREAKOUT,
-                symbol=symbol,
-                side="LONG" if latest['Close'] > latest['bb_middle'] else "SHORT",
-                timeframe=tf,
+                symbol=symbol, side=side, timeframe=tf,
                 entry_price=latest['Close'],
-                stop_loss=latest['Close'] * 0.985 if latest['Close'] > latest['bb_middle'] else latest['Close'] * 1.015,
-                take_profit=latest['Close'] * 1.04 if latest['Close'] > latest['bb_middle'] else latest['Close'] * 0.96,
+                stop_loss=latest['Close'] * sl_mult,
+                take_profit=latest['Close'] * tp_mult,
                 features=self._extract_features(latest),
-                timestamp=int(latest.name.timestamp()) if hasattr(latest.name, 'timestamp') else 0
+                timestamp=self._get_timestamp(latest)
             ))
         return candidates
 
-    def _extract_features(self, row: pd.Series) -> Dict[str, Any]:
-        """Extract a minimal feature dict from a row."""
-        return {
-            'rsi': row.get('rsi', 50),
-            'atr_percent': row.get('atr_percent', 0),
-            'volume_ratio': row.get('volume_ratio', 1),
-            'bb_position': row.get('bb_position', 0.5),
-            'bb_width': row.get('bb_width', 0),
-            'macd_hist': row.get('macd_hist', 0),
-        }
-
-    def _passes_hard_filters(self, candidate: SetupCandidate, df: pd.DataFrame) -> bool:
-        """Apply deterministic hard filters before LLM."""
+    def _detect_macd_cross(self, df: pd.DataFrame, symbol: str, tf: str) -> List[SetupCandidate]:
+        """کراس عددی MACD (1 یا -1) با تأیید RSI."""
+        candidates = []
         latest = df.iloc[-1]
 
-        # ATR threshold
-        if latest.get('atr_percent', 0) < self.min_atr_threshold:
+        macd_cross = latest.get("MACD cross", 0)
+        if macd_cross == 1 and latest.get("RSI(14)", 50) > 50:
+            atr_pct = latest.get("ATR % price", 0.01)
+            sl = latest['Close'] * (1 - atr_pct)
+            tp = latest['Close'] * (1 + 2 * atr_pct)
+            candidates.append(SetupCandidate(
+                setup_type=SetupType.MACD_CROSS,
+                symbol=symbol, side="LONG", timeframe=tf,
+                entry_price=latest['Close'],
+                stop_loss=sl,
+                take_profit=tp,
+                features=self._extract_features(latest),
+                timestamp=self._get_timestamp(latest)
+            ))
+        elif macd_cross == -1 and latest.get("RSI(14)", 50) < 50:
+            atr_pct = latest.get("ATR % price", 0.01)
+            sl = latest['Close'] * (1 + atr_pct)
+            tp = latest['Close'] * (1 - 2 * atr_pct)
+            candidates.append(SetupCandidate(
+                setup_type=SetupType.MACD_CROSS,
+                symbol=symbol, side="SHORT", timeframe=tf,
+                entry_price=latest['Close'],
+                stop_loss=sl,
+                take_profit=tp,
+                features=self._extract_features(latest),
+                timestamp=self._get_timestamp(latest)
+            ))
+        return candidates
+
+    def _detect_rsi_divergence(self, df: pd.DataFrame, symbol: str, tf: str) -> List[SetupCandidate]:
+        """واگرایی RSI (مقایسه‌ی ۴ کندل قبل)."""
+        candidates = []
+        if len(df) < 5:
+            return candidates
+
+        latest = df.iloc[-1]
+        prev3 = df.iloc[-4]
+
+        # واگرایی مثبت: Low پایین‌تر، RSI بالاتر
+        if latest['Low'] < prev3['Low'] and latest['RSI(14)'] > prev3['RSI(14)'] and latest['RSI(14)'] < 40:
+            sl = latest['Close'] * 0.98
+            tp = latest['Close'] * 1.04
+            candidates.append(SetupCandidate(
+                setup_type=SetupType.RSI_DIVERGENCE,
+                symbol=symbol, side="LONG", timeframe=tf,
+                entry_price=latest['Close'],
+                stop_loss=sl,
+                take_profit=tp,
+                features=self._extract_features(latest),
+                timestamp=self._get_timestamp(latest)
+            ))
+        # واگرایی منفی
+        elif latest['High'] > prev3['High'] and latest['RSI(14)'] < prev3['RSI(14)'] and latest['RSI(14)'] > 60:
+            sl = latest['Close'] * 1.02
+            tp = latest['Close'] * 0.96
+            candidates.append(SetupCandidate(
+                setup_type=SetupType.RSI_DIVERGENCE,
+                symbol=symbol, side="SHORT", timeframe=tf,
+                entry_price=latest['Close'],
+                stop_loss=sl,
+                take_profit=tp,
+                features=self._extract_features(latest),
+                timestamp=self._get_timestamp(latest)
+            ))
+        return candidates
+
+    # ── ابزارهای کمکی ────────────────────────────────────────────────────────
+
+    def _extract_features(self, row: pd.Series) -> Dict[str, Any]:
+        """استخراج ویژگی‌های کلیدی برای ذخیره در کاندید."""
+        return {
+            'rsi': row.get('RSI(14)', np.nan),
+            'atr_percent': row.get('ATR % price', np.nan),
+            'volume_ratio': row.get('Volume ratio', np.nan),
+            'bb_position': row.get('BB position', np.nan),
+            'bb_width': row.get('BB width %', np.nan),
+            'macd_hist': row.get('MACD histogram', np.nan),
+            'macd_cross': row.get('MACD cross', 0),
+            'ema_alignment': row.get('EMA alignment', 0),
+            'dist_support': row.get('Distance to support %', np.nan),
+            'dist_resistance': row.get('Distance to resistance %', np.nan),
+        }
+
+    def _detect_pinbar_confirm(
+        self,
+        df: pd.DataFrame,
+        symbol: str,
+        tf: str,
+    ) -> List[SetupCandidate]:
+        """Pin Bar + Confirmation candle"""
+
+        candidates = []
+
+        if len(df) < 2:
+            return candidates
+
+        pin = df.iloc[-2]
+        confirm = df.iloc[-1]
+
+        # -------------------------
+        # LONG
+        # -------------------------
+
+        body = abs(pin["Close"] - pin["Open"])
+        if body == 0:
+            body = 1e-9
+
+        lower_wick = min(pin["Open"], pin["Close"]) - pin["Low"]
+        upper_wick = pin["High"] - max(pin["Open"], pin["Close"])
+
+        bullish_pinbar = (
+            lower_wick >= body * 2
+            and upper_wick <= body
+        )
+
+        bullish_confirm = (
+            confirm["Close"] > confirm["Open"]
+            and abs(confirm["Close"] - confirm["Open"]) > body * 0.6
+        )
+
+        if (
+            pin.get("Distance to support %", 999) < 0.3
+            and confirm.get("EMA alignment", 0) == 1
+            and bullish_pinbar
+            and bullish_confirm
+            and confirm.get("Volume ratio", 0) >= 1.0
+            and confirm.get("RSI(14)", 50) < 70
+        ):
+
+            atr = confirm.get("ATR(14)", 0)
+
+            entry = confirm["Close"]
+            sl = pin["Low"] - atr * 0.2
+
+            risk = entry - sl
+            tp = entry + risk * 2
+
+            candidates.append(
+                SetupCandidate(
+                    setup_type=SetupType.PINBAR_CONFIRM,
+                    symbol=symbol,
+                    side="LONG",
+                    timeframe=tf,
+                    entry_price=entry,
+                    stop_loss=sl,
+                    take_profit=tp,
+                    features=self._extract_features(confirm),
+                    timestamp=self._get_timestamp(confirm),
+                )
+            )
+
+        # -------------------------
+        # SHORT
+        # -------------------------
+
+        bearish_pinbar = (
+            upper_wick >= body * 2
+            and lower_wick <= body
+        )
+
+        bearish_confirm = (
+            confirm["Close"] < confirm["Open"]
+            and abs(confirm["Close"] - confirm["Open"]) > body * 0.6
+        )
+
+        if (
+            pin.get("Distance to resistance %", 999) < 0.3
+            and confirm.get("EMA alignment", 0) == -1
+            and bearish_pinbar
+            and bearish_confirm
+            and confirm.get("Volume ratio", 0) >= 1.0
+            and confirm.get("RSI(14)", 50) > 30
+        ):
+
+            atr = confirm.get("ATR(14)", 0)
+
+            entry = confirm["Close"]
+            sl = pin["High"] + atr * 0.2
+
+            risk = sl - entry
+            tp = entry - risk * 2
+
+            candidates.append(
+                SetupCandidate(
+                    setup_type=SetupType.PINBAR_CONFIRM,
+                    symbol=symbol,
+                    side="SHORT",
+                    timeframe=tf,
+                    entry_price=entry,
+                    stop_loss=sl,
+                    take_profit=tp,
+                    features=self._extract_features(confirm),
+                    timestamp=self._get_timestamp(confirm),
+                )
+            )
+
+        return candidates
+
+    def _get_timestamp(self, row: pd.Series) -> int:
+        if hasattr(row.name, 'timestamp'):
+            return int(row.name.timestamp())
+        return 0
+
+    def _passes_hard_filters(self, candidate: SetupCandidate, df: pd.DataFrame) -> bool:
+        return True # just for test
+        """فیلترهای سخت‌گیرانه با استفاده از تمام اندیکاتورهای عددی."""
+        latest = df.iloc[-1]
+
+        # رد داده‌ی ناقص – ATR و RSI نباید NaN باشند
+        if pd.isna(latest.get("ATR % price")):
+            return False
+        if pd.isna(latest.get("RSI(14)")):
             return False
 
-        # Volume ratio
-        if latest.get('volume_ratio', 0) < self.min_volume_ratio:
+        # حداقل نوسان
+        if latest.get("ATR % price", 0) < self.min_atr_threshold:
             return False
 
-        # Trend alignment (for LONG setups)
-        if self.trend_alignment_required and candidate.side == "LONG":
-            if latest.get('ema_50', 0) <= latest.get('ema_200', 0):
+        # حجم برای ستاپ‌های حساس
+        volume_sensitive = {SetupType.BREAKOUT, SetupType.BB_SQUEEZE_BREAKOUT, SetupType.EMA_CROSS}
+        if candidate.setup_type in volume_sensitive:
+            if latest.get("Volume ratio", 0) < self.min_volume_ratio:
+                return False
+
+        # هم‌راستایی روند (در صورت نیاز)
+        if self.trend_alignment_required:
+            ema_align = latest.get("EMA alignment", 0)
+            if candidate.side == "LONG" and ema_align != 1:
+                return False
+            elif candidate.side == "SHORT" and ema_align != -1:
+                return False
+
+        # فیلتر اضافی برای MACD (اختیاری)
+        if candidate.setup_type == SetupType.MACD_CROSS:
+            if candidate.side == "LONG" and latest.get("MACD histogram", 0) <= 0:
+                return False
+            if candidate.side == "SHORT" and latest.get("MACD histogram", 0) >= 0:
                 return False
 
         return True

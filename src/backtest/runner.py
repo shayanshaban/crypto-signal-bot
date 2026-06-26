@@ -14,8 +14,9 @@ from src.backtest import state as st
 from src.trading.rule_engine import RuleEngine, SetupCandidate, SetupType
 from src.ml.feature_engineering import FeatureExtractor
 from src.ml.triple_barrier import TripleBarrierLabeler, TradeRecord
-from src.ml.dataset_storage import DatasetStorage
+from src.ml.dataset_storage import save_sample
 from src.data.baker import enrich_dataframe
+from src.data.baker import calculate_reward_r
 
 
 def _make_per_thread_resources():
@@ -25,10 +26,10 @@ def _make_per_thread_resources():
         "llm_confirmer": LLMConfirmer(),
         "feature_extractor": FeatureExtractor(),
         "labeler": TripleBarrierLabeler(max_holding_bars=config.MAX_HOLDING_BARS),
-        "dataset_storage": DatasetStorage(config.DATASET_DIR),
     }
 
-
+MAX_HOLDING_CANDLES = 20 
+TARGET_SETUP = SetupType.RSI_DIVERGENCE
 def run_thread(thread_state: dict) -> None:
     thread_index = thread_state["thread_index"]
     start_id = thread_state["start_id"]
@@ -40,108 +41,204 @@ def run_thread(thread_state: dict) -> None:
     llm_confirmer = res["llm_confirmer"]
     feature_extractor = res["feature_extractor"]
     labeler = res["labeler"]
-    dataset_storage = res["dataset_storage"]
+
 
     while True:
         candle = db.get_next_baseline_candle_in_range(start_id, end_id)
-
         if candle is None:
             thread_state["status"] = "done"
             st.save_thread_state(thread_index, thread_state)
             return
+        # candle_window = db.get_candles_for_trigger(
+        #     candle["Timestamp"], config.TRADING_TIME_FRAME,500)
+        row = db.get_enriched_window(candle["id"],500)
+        df_window = db.enriched_rows_to_dataframe(row)
+        # df_window = enrich_dataframe(df_window)
+        candidates = rule_engine.detect_setups(
+            df_window, config.SYMBOL_DISPLAY, config.TRADING_TIME_FRAME
+        )
+        baseline_id = candle["id"]
+        timestamp = candle["Timestamp"]
+        for candidate in candidates:
 
-        open_pos = db.get_open_position_for_thread(thread_index)
+        # candidate = next(
+        #     (c for c in candidates if c.setup_type == TARGET_SETUP),
+        #     None
+        # )
 
-        # -----------------------------------------------------------------
-        # 1. مدیریت position باز (چک SL/TP)
-        # -----------------------------------------------------------------
-        if open_pos is not None:
-            closed = db.check_position_tp_sl(open_pos["id"], candle)
-            if closed:
-                pos = db.get_position(open_pos["id"])
+            if candidate is None:
+                continue
+            
+            pos_id = db.open_back_test_position(
+                        {
+                            "symbol": candidate.symbol,
+                            "position": candidate.side,
+                            "entry": candidate.entry_price,
+                            "stop_loss": candidate.stop_loss,
+                            "take_profit": candidate.take_profit,
+                            "confidence": 100,
+                            "reason": f"Rule: {candidate.setup_type.value}",
+                        },
+                        signal_id=None,
+                        timeframe=config.TRADING_TIME_FRAME,
+                        entry_timestamp=candle["Timestamp"],
+                        thread_index=thread_index,
+                    )
+            
+            
+            future_candles = db.get_future_candles(baseline_id)
+            exit_price = None
+            for candle in future_candles:
 
-                # محاسبه holding_candles از DB
-                holding_candles = thread_state.get("holding_candles", 0)
+                if candidate.side == "LONG":
 
-                trade_record = TradeRecord(
-                    symbol=pos["symbol"],
-                    side=pos["position"],
-                    entry_price=pos["entry"],
-                    stop_loss=pos["stop_loss"],
-                    take_profit=pos["take_profit"],
-                    entry_timestamp=pos["entry_timestamp"],
-                    exit_timestamp=candle["Timestamp"],
-                    exit_price=candle["Close"],
-                    holding_candles=holding_candles,
-                )
-                thread_state["holding_candles"] = 0
+                    if candle["Low"] <= candidate.stop_loss:
+                        exit_price = candidate.stop_loss
+                        db.check_position_tp_sl(pos_id,candle)
+                        break
 
-                df_slice = db.get_candles_between(
-                    pos["entry_timestamp"], candle["Timestamp"]
-                )
-                df_slice = df_slice.reset_index(drop=True)
-                label = labeler.label_trade(trade_record, df_slice)
-                features = db.get_position_features(pos["id"])
-                candidate = _reconstruct_candidate(pos)
+                    if candle["High"] >= candidate.take_profit:
+                        exit_price = candidate.take_profit
+                        db.check_position_tp_sl(pos_id,candle)
+                        break
 
-                dataset_storage.store_trade(
-                    candidate=candidate,
-                    trade_record=trade_record,
-                    features=features,
-                    label=label,
-                    df=df_slice,
-                )
+                else:
 
-                thread_state["open_position_id"] = None
-            else: 
-                thread_state["holding_candles"] = thread_state.get("holding_candles", 0) + 1
-        # -----------------------------------------------------------------
-        # 2. پیدا کردن setup جدید (فقط وقتی position باز نداریم)
-        # -----------------------------------------------------------------
-        else:
-            candle_window = db.get_candles_for_trigger(
-                candle["Timestamp"], config.TRADING_TIME_FRAME
-            )
-            df_window = db.candles_to_dataframe(candle_window)
-            df_window = enrich_dataframe(df_window) 
-            candidates = rule_engine.detect_setups(
-                df_window, config.SYMBOL_DISPLAY, config.TRADING_TIME_FRAME
-            )
+                    if candle["High"] >= candidate.stop_loss:
+                        exit_price = candidate.stop_loss
+                        db.check_position_tp_sl(pos_id,candle)
+                        break
 
-            for candidate in candidates:
-                # sleep قبل از LLM call — برای همه candidateها
-                time.sleep(config.BACK_TEST_WAIT_AFTER_ASK_AI)
+                    if candle["Low"] <= candidate.take_profit:
+                        exit_price = candidate.take_profit
+                        db.check_position_tp_sl(pos_id,candle)
+                        break
 
-                confirmed = llm_confirmer.confirm(candidate)
-                if not confirmed:
-                    continue
+            if exit_price is None:
+                exit_price = future_candles[-1]["Close"]
+            
+            result_r = calculate_reward_r(
+                candidate.side,
+                candidate.entry_price,
+                exit_price,
+                candidate.stop_loss)
+            
+            
+            save_sample(
+                df_window,
+                config.SYMBOL_DISPLAY,
+                config.TRADING_TIME_FRAME,
+                timestamp,
+                candidate.side,
+                candidate.setup_type.value,
+                result_r)
+        
+        db.mark_baseline_candle_checked(baseline_id)
+        thread_state["last_processed_id"] = baseline_id
+        st.save_thread_state(thread_index, thread_state)
+        # if candle is None:
+        #     thread_state["status"] = "done"
+        #     st.save_thread_state(thread_index, thread_state)
+        #     return
 
-                features = feature_extractor.extract(candidate, df_window)
-                thread_state["holding_candles"] = 0 
-                pos_id = db.open_back_test_position(
-                    {
-                        "symbol": candidate.symbol,
-                        "position": candidate.side,
-                        "entry": candidate.entry_price,
-                        "stop_loss": candidate.stop_loss,
-                        "take_profit": candidate.take_profit,
-                        "confidence": 100,
-                        "reason": f"Rule: {candidate.setup_type.value}",
-                    },
-                    signal_id=None,
-                    timeframe=config.TRADING_TIME_FRAME,
-                    entry_timestamp=candle["Timestamp"],
-                    thread_index=thread_index,
-                )
+        # open_pos = db.get_open_position_for_thread(thread_index)
 
-                db.store_position_features(pos_id, features, candidate.setup_type.value)
-                thread_state["open_position_id"] = pos_id
-                break  # فقط یه position در هر لحظه
+        # # -----------------------------------------------------------------
+        # # 1. مدیریت position باز (چک SL/TP)
+        # # -----------------------------------------------------------------
+        # if open_pos is not None:
+        #     holding_candles = thread_state.get("holding_candles", 0)
+
+        #     if holding_candles >= MAX_HOLDING_CANDLES:
+        #         db.close_position_at_market(open_pos["id"], candle)
+        #         thread_state["holding_candles"] = 0
+        #         thread_state["open_position_id"] = None
+        #         closed = True
+        #     else :   
+        #         closed = db.check_position_tp_sl(open_pos["id"], candle)
+
+        #     if closed:
+        #         pos = db.get_position(open_pos["id"])
+
+        #         # محاسبه holding_candles از DB
+        #         holding_candles = thread_state.get("holding_candles", 0)
+
+        #         trade_record = TradeRecord(
+        #             symbol=pos["symbol"],
+        #             side=pos["position"],
+        #             entry_price=pos["entry"],
+        #             stop_loss=pos["stop_loss"],
+        #             take_profit=pos["take_profit"],
+        #             entry_timestamp=pos["entry_timestamp"],
+        #             exit_timestamp=candle["Timestamp"],
+        #             exit_price=candle["Close"],
+        #             holding_candles=holding_candles,
+        #         )
+        #         thread_state["holding_candles"] = 0
+
+        #         df_slice = db.get_candles_between(
+        #             pos["entry_timestamp"], candle["Timestamp"]
+        #         )
+        #         df_slice = df_slice.reset_index(drop=True)
+        #         label = labeler.label_trade(trade_record, df_slice)
+        #         features = db.get_position_features(pos["id"])
+        #         candidate = _reconstruct_candidate(pos)
+
+        #         dataset_storage.store_trade(
+        #             candidate=candidate,
+        #             trade_record=trade_record,
+        #             features=features,
+        #             label=label,
+        #             df=df_slice,
+        #         )
+
+        #         thread_state["open_position_id"] = None
+        #     else: 
+        #         thread_state["holding_candles"] = thread_state.get("holding_candles", 0) + 1
+        # # -----------------------------------------------------------------
+        # # 2. پیدا کردن setup جدید (فقط وقتی position باز نداریم)
+        # # -----------------------------------------------------------------
+        # else:
+        #     candle_window = db.get_candles_for_trigger(
+        #         candle["Timestamp"], config.TRADING_TIME_FRAME,500)
+        #     df_window = db.candles_to_dataframe(candle_window)
+        #     # df_window = enrich_dataframe(df_window) 
+        #     candidates = rule_engine.detect_setups(
+        #         df_window, config.SYMBOL_DISPLAY, config.TRADING_TIME_FRAME
+        #     )
+
+        #     for candidate in candidates:
+        #         # sleep قبل از LLM call — برای همه candidateها
+        #         # time.sleep(config.BACK_TEST_WAIT_AFTER_ASK_AI)
+
+        #         # confirmed = llm_confirmer.confirm(candidate)
+        #         # if not confirmed:
+        #         #     continue
+
+        #         features = feature_extractor.extract(candidate, df_window)
+        #         thread_state["holding_candles"] = 0 
+        #         pos_id = db.open_back_test_position(
+        #             {
+        #                 "symbol": candidate.symbol,
+        #                 "position": candidate.side,
+        #                 "entry": candidate.entry_price,
+        #                 "stop_loss": candidate.stop_loss,
+        #                 "take_profit": candidate.take_profit,
+        #                 "confidence": 100,
+        #                 "reason": f"Rule: {candidate.setup_type.value}",
+        #             },
+        #             signal_id=None,
+        #             timeframe=config.TRADING_TIME_FRAME,
+        #             entry_timestamp=candle["Timestamp"],
+        #             thread_index=thread_index,
+        #         )
+
+        #         db.store_position_features(pos_id, features, candidate.setup_type.value)
+        #         thread_state["open_position_id"] = pos_id
+        #         break  # فقط یه position در هر لحظه
 
         # پیشروی
-        db.mark_baseline_candle_checked(candle["id"])
-        thread_state["last_processed_id"] = candle["id"]
-        st.save_thread_state(thread_index, thread_state)
+        
 
 
 def _reconstruct_candidate(pos: dict) -> SetupCandidate:
@@ -178,7 +275,7 @@ def _progress_bar_loop(stop_event: threading.Event) -> None:
 # Public entry points
 # -----------------------------------------------------------------
 def start_backtest() -> None:
-    db.rebuild_baseline_from_historical(config.TRADING_TIME_FRAME)
+    
     ids = db.get_baseline_ids(trim=config.BACK_TEST_WARMUP_TRIM)
     chunks = st.split_ids_into_chunks(ids, config.BACK_TEST_THREAD)
     thread_states = [
@@ -191,11 +288,18 @@ def start_backtest() -> None:
 def full_start():
     db.reset_back_test_db(True)
     fetcher.get_historical_data()
+    db.rebuild_baseline_from_historical(config.TRADING_TIME_FRAME)
+
+    candles = db.get_all_baseline()
+    df_window = db.candles_to_dataframe(candles)
+    df_window = enrich_dataframe(df_window)
+    db.insert_enriched_dataframe(df_window,config.SYMBOL_DISPLAY,config.TRADING_TIME_FRAME)
     start_backtest()
 
 
 def re_start():
     db.reset_back_test_db(False)
+    db.rebuild_baseline_from_historical(config.TRADING_TIME_FRAME)
     start_backtest()
 
 

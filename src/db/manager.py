@@ -25,6 +25,73 @@ import pandas as pd   # NEW
 import config
 
 
+DB_TO_DF_MAP = {
+    "open": "Open",
+    "high": "High",
+    "low": "Low",
+    "close": "Close",
+    "volume": "Volume",
+    "change_pct": "Change %",
+    "period_high": "Period high",
+    "period_low": "Period low",
+    "position_in_period_range": "Position in period range",
+
+    "ema9": "EMA9",
+    "ema21": "EMA21",
+    "ema50": "EMA50",
+    "ema200": "EMA200",
+
+    "price_vs_ema9": "Price vs EMA9",
+    "price_vs_ema21": "Price vs EMA21",
+    "price_vs_ema50": "Price vs EMA50",
+    "price_vs_ema200": "Price vs EMA200",
+
+    "ema_alignment": "EMA alignment",
+    "ema50_vs_ema200": "EMA50 vs EMA200",
+
+    "rsi": "RSI(14)",
+    "rsi_zone": "RSI zone",
+
+    "stoch_rsi": "Stoch RSI",
+    "stoch_rsi_zone": "Stoch RSI zone",
+
+    "macd_line": "MACD line",
+    "macd_signal": "MACD signal",
+    "macd_histogram": "MACD histogram",
+    "macd_position": "MACD position",
+    "macd_cross": "MACD cross",
+
+    "bb_upper": "BB upper",
+    "bb_mid": "BB mid",
+    "bb_lower": "BB lower",
+    "bb_width_pct": "BB width %",
+    "bb_position": "BB position",
+    "bb_signal": "BB signal",
+    "bb_squeeze": "BB squeeze",
+
+    "atr14": "ATR(14)",
+    "atr_pct_price": "ATR % price",
+
+    "volume_avg20": "Volume avg(20)",
+    "volume_ratio": "Volume ratio",
+    "volume_signal": "Volume signal",
+    "volume_trend": "Volume trend",
+
+    "obv_trend": "OBV trend",
+
+    "market_structure": "Market structure",
+
+    "candle_type": "Candle type",
+    "engulfing": "Engulfing",
+    "last_3_candles": "Last 3 candles",
+
+    "distance_to_support_pct": "Distance to support %",
+    "distance_to_resistance_pct": "Distance to resistance %",
+
+    "timestamp": "Timestamp",
+    "candle_id": "id",
+}
+
 # ── Connection ────────────────────────────────────────────────────────────────
 
 @contextmanager
@@ -157,7 +224,99 @@ def init_db() -> None:
                 IsChecked   Boolean   DEFAULT FALSE
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS enriched_candles (
+            id INTEGER PRIMARY KEY,
+            candle_id INTEGER NOT NULL UNIQUE,
 
+            timestamp INTEGER NOT NULL,
+            symbol TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+                    
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL,
+            volume REAL,
+
+            change_pct REAL,
+            period_high REAL,
+            period_low REAL,
+            position_in_period_range REAL,
+
+            ema9 REAL,
+            price_vs_ema9 REAL,
+
+            ema21 REAL,
+            price_vs_ema21 REAL,
+
+            ema50 REAL,
+            price_vs_ema50 REAL,
+
+            ema200 REAL,
+            price_vs_ema200 REAL,
+
+            ema_alignment REAL,
+            ema50_vs_ema200 REAL,
+
+            rsi REAL,
+            rsi_zone TEXT,
+
+            stoch_rsi REAL,
+            stoch_rsi_zone TEXT,
+
+            macd_line REAL,
+            macd_signal REAL,
+            macd_histogram REAL,
+            macd_position TEXT,
+            macd_cross INTEGER,
+
+            bb_upper REAL,
+            bb_mid REAL,
+            bb_lower REAL,
+            bb_width_pct REAL,
+            bb_position REAL,
+            bb_signal TEXT,
+            bb_squeeze TEXT,
+
+            atr14 REAL,
+            atr_pct_price REAL,
+
+            volume_avg20 REAL,
+            volume_ratio REAL,
+            volume_signal TEXT,
+            volume_trend REAL,
+
+            obv_trend INTEGER,
+
+            market_structure TEXT,
+
+            candle_type TEXT,
+            engulfing TEXT,
+            last_3_candles TEXT,
+
+            distance_to_support_pct REAL,
+            distance_to_resistance_pct REAL
+        );
+        
+        
+        """)
+        cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_enriched_timestamp
+        ON enriched_candles(timestamp);
+        """)
+        cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_enriched_timeframe
+        ON enriched_candles(timeframe);
+        """)
+        cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_enriched_symbol_tf_ts
+        ON enriched_candles(symbol,timeframe,timestamp);
+        """)
+        cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_enriched_candle_id
+        ON enriched_candles(candle_id);
+        """)
         # --- MIGRATION: add new columns if they don't exist (for existing databases) ---
         # This ensures we don't break existing installations.
         try:
@@ -171,6 +330,164 @@ def init_db() -> None:
 
 
 # ── BackTest (existing functions) ──────────────────────────────────────────
+def insert_enriched_dataframe(
+    df: pd.DataFrame,
+    symbol: str,
+    timeframe: str
+):
+    rows = []
+    placeholders = ",".join(["?"] * 52)   # اکنون ۵۲ ستون
+    for _, row in df.iterrows():
+        rows.append((
+            int(row["id"]),
+            int(row["Timestamp"]),
+            symbol,
+            timeframe,
+            row["Open"],
+            row["High"],
+            row["Low"],
+            row["Close"],
+            row["Volume"],
+            row.get("Change %"),
+            row.get("Period high"),
+            row.get("Period low"),
+            row.get("Position in period range"),
+            row.get("EMA9"),
+            row.get("Price vs EMA9"),
+            row.get("EMA21"),
+            row.get("Price vs EMA21"),
+            row.get("EMA50"),
+            row.get("Price vs EMA50"),
+            row.get("EMA200"),
+            row.get("Price vs EMA200"),
+            row.get("EMA alignment"),
+            row.get("EMA50 vs EMA200"),
+            row.get("RSI(14)"),
+            row.get("RSI zone"),
+            row.get("Stoch RSI"),
+            row.get("Stoch RSI zone"),
+            row.get("MACD line"),
+            row.get("MACD signal"),
+            row.get("MACD histogram"),
+            row.get("MACD position"),
+            row.get("MACD cross"),
+            row.get("BB upper"),
+            row.get("BB mid"),
+            row.get("BB lower"),
+            row.get("BB width %"),
+            row.get("BB position"),
+            row.get("BB signal"),
+            row.get("BB squeeze"),
+            row.get("ATR(14)"),
+            row.get("ATR % price"),
+            row.get("Volume avg(20)"),
+            row.get("Volume ratio"),
+            row.get("Volume signal"),
+            row.get("Volume trend"),
+            row.get("OBV trend"),
+            row.get("Market structure"),
+            row.get("Candle type"),
+            row.get("Engulfing"),
+            row.get("Last 3 candles"),
+            row.get("Distance to support %"),
+            row.get("Distance to resistance %"),
+        ))
+    with _db() as cur:
+        cur.executemany(f"""
+            INSERT OR REPLACE INTO enriched_candles (
+                candle_id,
+                timestamp,
+                symbol,
+                timeframe,
+                open,
+                high,
+                low,
+                close,
+                volume,
+                change_pct,
+                period_high,
+                period_low,
+                position_in_period_range,
+                ema9,
+                price_vs_ema9,
+                ema21,
+                price_vs_ema21,
+                ema50,
+                price_vs_ema50,
+                ema200,
+                price_vs_ema200,
+                ema_alignment,
+                ema50_vs_ema200,
+                rsi,
+                rsi_zone,
+                stoch_rsi,
+                stoch_rsi_zone,
+                macd_line,
+                macd_signal,
+                macd_histogram,
+                macd_position,
+                macd_cross,
+                bb_upper,
+                bb_mid,
+                bb_lower,
+                bb_width_pct,
+                bb_position,
+                bb_signal,
+                bb_squeeze,
+                atr14,
+                atr_pct_price,
+                volume_avg20,
+                volume_ratio,
+                volume_signal,
+                volume_trend,
+                obv_trend,
+                market_structure,
+                candle_type,
+                engulfing,
+                last_3_candles,
+                distance_to_support_pct,
+                distance_to_resistance_pct
+            )
+            VALUES (
+                {placeholders}
+            )
+        """, rows)
+def enriched_rows_to_dataframe(rows: list[dict]) -> pd.DataFrame:
+    """
+    Convert rows from enriched_candles table into a DataFrame
+    with the same columns produced by enrich_dataframe().
+    """
+    if not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows)
+
+    # Rename DB columns -> enrich_dataframe columns
+    df = df.rename(columns=DB_TO_DF_MAP)
+
+    
+    # if "id" in df.columns:
+    #     df = df.set_index("id", drop=False)
+
+    return df
+
+def get_enriched_window(
+    candle_id: int,
+    size: int = 500
+) -> list[dict]:
+
+    with _db() as cur:
+        rows = cur.execute("""
+            SELECT *
+            FROM enriched_candles
+            WHERE candle_id <= ?
+            ORDER BY candle_id DESC
+            LIMIT ?
+        """, (candle_id, size)).fetchall()
+
+    rows.reverse()
+
+    return [dict(r) for r in rows]
 
 def get_candles_for_trigger(timestamp: int, timeframe: str, count: int = 100) -> list:
     """
@@ -246,9 +563,11 @@ def reset_back_test_db(include_historical: bool = False) -> None:
         cur.execute("DELETE FROM back_test_candels_base_line")
         if include_historical:
             cur.execute("DELETE FROM historical_candels")
+            cur.execute("DELETE FROM enriched_candles")
         tables = ["back_test_signals", "back_test_position", "back_test_candels_base_line"]
         if include_historical:
             tables.append("historical_candels")
+            tables.append("enriched_candles")
         cur.execute(
             f"DELETE FROM sqlite_sequence WHERE name IN ({','.join('?' * len(tables))})",
             tables
@@ -489,6 +808,71 @@ def get_next_baseline_candle_in_range(start_id: int, end_id: int) -> dict | None
             "Volume": row[6], "Timeframe": row[7],
         }
 
+def get_future_candles(start_id: int, limit: int = 1000):
+    with _db() as cur:
+        rows = cur.execute("""
+            SELECT id, Timestamp, Open, High, Low, Close, Volume, Timeframe
+            FROM back_test_candels_base_line
+            WHERE id > ?
+            ORDER BY id ASC
+            LIMIT ?
+        """, (start_id, limit)).fetchall()
+
+    return [
+        {
+            "id": r[0],
+            "Timestamp": r[1],
+            "Open": r[2],
+            "High": r[3],
+            "Low": r[4],
+            "Close": r[5],
+            "Volume": r[6],
+            "Timeframe": r[7],
+        }
+        for r in rows
+    ]
+
+def get_candle_by_id(id: int) -> dict | None:
+    """
+    Return the next unchecked candle (oldest first) within [start_id, end_id],
+    scoped to a single thread's slice of the baseline.
+    """
+    with _db() as cur:
+        row = cur.execute("""
+            SELECT id, Timestamp, Open, High, Low, Close, Volume, Timeframe
+            FROM back_test_candels_base_line
+            WHERE id = ?
+            ORDER BY Timestamp ASC
+            LIMIT 1
+        """, (id)).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row[0], "Timestamp": row[1], "Open": row[2],
+            "High": row[3], "Low": row[4], "Close": row[5],
+            "Volume": row[6], "Timeframe": row[7],
+        }
+def get_all_baseline() -> list[dict]:
+    with _db() as cur:
+        rows = cur.execute("""
+            SELECT id, Timestamp, Open, High, Low, Close, Volume, Timeframe
+            FROM back_test_candels_base_line
+            ORDER BY Timestamp ASC
+        """).fetchall()
+
+    return [
+        {
+            "id": r[0],
+            "Timestamp": r[1],
+            "Open": r[2],
+            "High": r[3],
+            "Low": r[4],
+            "Close": r[5],
+            "Volume": r[6],
+            "Timeframe": r[7],
+        }
+        for r in rows
+    ]
 
 def get_open_position_for_thread(thread_index: int) -> dict | None:
     """Return the single open position for this thread, if any."""
@@ -504,6 +888,17 @@ def get_open_position_for_thread(thread_index: int) -> dict | None:
     return {"id": row[0], "position": row[1], "entry": row[2],
             "stop_loss": row[3], "take_profit": row[4]}
 
+def close_position_at_market( position_id: int, candle: dict) -> None:
+    """Force close یه position به قیمت بازار (Close کندل فعلی)."""
+    exit_price = candle["Close"]
+    exit_timestamp = candle["Timestamp"]
+    
+    close_back_test_position(
+        position_id,
+        exit_price=exit_price,        # قیمت خروج همون Close کندل فعلیه
+        exit_timestamp=exit_timestamp,
+        status="TIMEOUT",     # تفکیک از SL/TP معمولی
+    )
 
 def check_position_tp_sl(position_id: int, candle: dict) -> bool:
     """
@@ -546,27 +941,26 @@ def get_baseline_progress() -> tuple[int, int]:
 
 # ── NEW Helper Functions for ML Pipeline ──────────────────────────────────
 
-def candles_to_dataframe(candles: list, timeframe: str | None = None) -> pd.DataFrame:
-    """
-    Convert a list of candles (from get_candles_for_trigger) into a pandas DataFrame.
-
-    The input is the same format returned by get_candles_for_trigger():
-        [[Timestamp, Open, High, Low, Close, Volume], ...]
-
-    Args:
-        candles: list of lists, each containing [ts, open, high, low, close, volume].
-        timeframe: optional string (ignored in conversion, kept for consistency).
-
-    Returns:
-        pandas DataFrame with columns: ['Open','High','Low','Close','Volume']
-        and a DatetimeIndex (from the timestamp column).
-    """
+def candles_to_dataframe(candles: list[dict]) -> pd.DataFrame:
     if not candles:
-        return pd.DataFrame(columns=['Open','High','Low','Close','Volume'])
+        return pd.DataFrame(
+            columns=[
+                "id",
+                "Timestamp",
+                "Open",
+                "High",
+                "Low",
+                "Close",
+                "Volume",
+                "Timeframe",
+            ]
+        )
 
-    df = pd.DataFrame(candles, columns=['Timestamp','Open','High','Low','Close','Volume'])
-    df['Timestamp'] = pd.to_datetime(df['Timestamp'], unit='s')
-    df.set_index('Timestamp', inplace=True)
+    df = pd.DataFrame(candles)
+
+    # df["Timestamp"] = pd.to_datetime(df["Timestamp"], unit="s")
+    # df.set_index("Timestamp", inplace=True)
+
     return df
 
 def get_position(pos_id: int) -> dict | None:
