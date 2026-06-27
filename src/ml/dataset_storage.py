@@ -132,7 +132,8 @@ def df_to_sample(
 
 def save_sample(sample_df: pd.DataFrame,symbol: str,timeframe: str,candle_ts:int,side: str,setup_type: str,result_r:float):
     DATASET_FILE = config.DATASET_DIR  + "/ml_dataset.csv"
-
+    if result_r is None:
+        return
     sample = df_to_sample(sample_df,symbol,timeframe,candle_ts,side,setup_type,result_r)
     
     df = pd.DataFrame([sample])
