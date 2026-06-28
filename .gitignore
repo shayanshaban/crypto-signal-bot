@@ -30,6 +30,7 @@ data/back_test/*.json
 !output/.gitkeep
 !logs/.gitkeep
 historical_data/*
+dataset/
 !historical_data/.gitkeep
 
 # ── IDEs ─────────────────────────────────────────────────────
