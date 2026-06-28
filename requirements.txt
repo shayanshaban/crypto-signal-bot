@@ -9,3 +9,4 @@ lightgbm
 catboost
 scikit-learn
 tqdm
+scikit-learn

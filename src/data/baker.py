@@ -316,6 +316,67 @@ def _obv_trend_series(close: np.ndarray, volume: np.ndarray, lookback: int = 5) 
                 trend[i] = 0
     return trend
 
+
+
+def find_swing_series(
+    high: np.ndarray,
+    low: np.ndarray,
+    lookback: int = 3,
+):
+    """
+    Detect swing highs/lows once.
+
+    Returns
+    -------
+    swing_highs : np.ndarray
+        NaN except at swing highs.
+
+    swing_lows : np.ndarray
+        NaN except at swing lows.
+    """
+
+    n = len(high)
+
+    swing_highs = np.full(n, np.nan)
+    swing_lows = np.full(n, np.nan)
+
+    for i in range(lookback, n - lookback):
+
+        if high[i] >= np.max(high[i-lookback:i+lookback+1]):
+            swing_highs[i] = high[i]
+
+        if low[i] <= np.min(low[i-lookback:i+lookback+1]):
+            swing_lows[i] = low[i]
+
+    return swing_highs, swing_lows
+def last_swing_series(
+    swing_highs: np.ndarray,
+    swing_lows: np.ndarray,
+):
+    """
+    For every candle return the latest swing high and swing low.
+    """
+
+    n = len(swing_highs)
+
+    last_high = np.full(n, np.nan)
+    last_low = np.full(n, np.nan)
+
+    cur_high = np.nan
+    cur_low = np.nan
+
+    for i in range(n):
+
+        if not np.isnan(swing_highs[i]):
+            cur_high = swing_highs[i]
+
+        if not np.isnan(swing_lows[i]):
+            cur_low = swing_lows[i]
+
+        last_high[i] = cur_high
+        last_low[i] = cur_low
+
+    return last_high, last_low
 # ── public API ────────────────────────────────────────────────────────────────
 def should_ask_ai(candles: list, current_price: float | None = None) -> bool:
     """
@@ -447,6 +508,10 @@ def enrich_dataframe(df: pd.DataFrame, show_progress: bool = False) -> pd.DataFr
     df["EMA50 vs EMA200"] = cross_zone
     if pbar: pbar.update(1)
 
+    df["EMA9 slope"] = (e9 - np.roll(e9, 5)) / np.roll(e9, 5) * 100
+    df["EMA21 slope"] = (e21 - np.roll(e21, 5)) / np.roll(e21, 5) * 100
+    df["EMA50 slope"] = (e50 - np.roll(e50, 5)) / np.roll(e50, 5) * 100
+    df["EMA200 slope"] = (e200 - np.roll(e200, 5)) / np.roll(e200, 5) * 100 
     # ── RSI ──────────────────────────────────────────────
     rsi_arr = _rsi_series(c, 14)
     df["RSI(14)"] = rsi_arr
@@ -460,6 +525,8 @@ def enrich_dataframe(df: pd.DataFrame, show_progress: bool = False) -> pd.DataFr
     df["RSI zone"] = rsi_zone
     if pbar: pbar.update(1)
 
+    rsi_slope = rsi_arr - np.roll(rsi_arr,5)
+    df["RSI slope"] = rsi_slope
     # ── Stoch RSI ────────────────────────────────────────
     stoch_arr = _stoch_rsi_series(c, 14, 14)
     df["Stoch RSI"] = stoch_arr
@@ -470,6 +537,7 @@ def enrich_dataframe(df: pd.DataFrame, show_progress: bool = False) -> pd.DataFr
     df["Stoch RSI zone"] = stoch_zone
     if pbar: pbar.update(1)
 
+    df["Stoch RSI slope"] = stoch_arr - np.roll(stoch_arr,5)
     # ── MACD ─────────────────────────────────────────────
     macd_line, macd_sig, macd_hist = _macd_series(c)
     df["MACD line"]      = macd_line
@@ -570,20 +638,126 @@ def enrich_dataframe(df: pd.DataFrame, show_progress: bool = False) -> pd.DataFr
     df["Last 3 candles"] = last3
     if pbar: pbar.update(1)
 
+    df["Return 1"] = pd.Series(c).pct_change(1)*100
+    df["Return 3"] = pd.Series(c).pct_change(3)*100
+    df["Return 5"] = pd.Series(c).pct_change(5)*100
+    df["Return 10"] = pd.Series(c).pct_change(10)*100
+    df["Return 20"] = pd.Series(c).pct_change(20)*100
+
+    df["Volatility 10"] = pd.Series(c).pct_change().rolling(10).std()
+
+    df["Volatility 20"] = pd.Series(c).pct_change().rolling(20).std()
+
+    df["Highest 20"] = pd.Series(h).rolling(20).max()
+
+    df["Lowest 20"] = pd.Series(l).rolling(20).min()
+
+    df["Distance Highest20"] = (df["Highest 20"]-c)/c*100
+
+    df["Distance Lowest20"] = (c-df["Lowest 20"])/c*100
+
+    body=np.abs(c-o)
+
+    df["Body %"]=body/c*100
+
+    upper=h-np.maximum(o,c)
+
+    df["Upper wick %"]=upper/c*100
+
+    lower=np.minimum(o,c)-l
+
+    df["Lower wick %"]=lower/c*100
+
+    df["Prev High Dist"]=(c-pd.Series(h).shift(1))/c*100
+
+    df["Prev Low Dist"]=(c-pd.Series(l).shift(1))/c*100
+
+    bull=(c>o).astype(int)
+
+    df["Bull Ratio 10"]=pd.Series(bull).rolling(10).mean()
+
+    df["Avg Body10"]=pd.Series(body).rolling(10).mean()
+
+    df["Close Position"]=(c-l)/(h-l)*100
+
+    dt = pd.to_datetime(df["Timestamp"], unit="s")
+
+    df["Hour"] = dt.dt.hour.astype(np.int8)
+
+    df["Day of Week"] = dt.dt.dayofweek.astype(np.int8)
+
+    session = np.full(N, "Other", dtype=object)
+
+    session[(df["Hour"] >= 0) & (df["Hour"] < 8)] = "Asia"
+
+    session[(df["Hour"] >= 8) & (df["Hour"] < 16)] = "London"
+
+    session[(df["Hour"] >= 13) & (df["Hour"] < 21)] = "New York"
+
+    df["Session"] = session
+
+    trend_age = np.zeros(N, dtype=np.int32)
+
+    for i in range(1, N):
+        if align[i] == align[i-1]:
+            trend_age[i] = trend_age[i-1] + 1
+        else:
+            trend_age[i] = 0
+
+    df["Trend age"] = trend_age
+
+    bars_since_cross = np.zeros(N, dtype=np.int32)
+
+    counter = 100000
+
+    for i in range(1, N):
+
+        crossed = (
+            (e9[i-1] <= e21[i-1] and e9[i] > e21[i]) or
+            (e9[i-1] >= e21[i-1] and e9[i] < e21[i])
+        )
+
+        if crossed:
+            counter = 0
+        else:
+            counter += 1
+
+        bars_since_cross[i] = counter
+
+    df["Bars Since EMA Cross"] = bars_since_cross
+
+    df["EMA9 vs EMA21"] = np.where(
+        e21 != 0,
+        (e9 - e21) / e21 * 100,
+        np.nan
+    )
+    
+
     # ── Distance to support / resistance (همان حلقه‌ی قبلی) ─
-    dist_support = np.full(N, np.nan)
-    dist_resistance = np.full(N, np.nan)
-    for i in range(50, N + 1):
-        sh, sl = _swing_points(h[:i], l[:i], lookback=3)
-        levels = _nearest_levels(sh + sl, c[i-1], n=1)
-        if levels["nearest_supports"]:
-            sup = levels["nearest_supports"][0]
-            dist_support[i-1] = (c[i-1] - sup) / c[i-1] * 100
-        if levels["nearest_resistances"]:
-            res = levels["nearest_resistances"][0]
-            dist_resistance[i-1] = (res - c[i-1]) / c[i-1] * 100
-    df["Distance to support %"] = dist_support
-    df["Distance to resistance %"] = dist_resistance
+    swing_highs, swing_lows = find_swing_series(
+    h,
+    l,
+    lookback=3,
+    )
+
+    last_high, last_low = last_swing_series(
+        swing_highs,
+        swing_lows,
+    )
+    df["Distance Last Swing High"] = (
+    (last_high - c) / c * 100
+    )
+
+    df["Distance Last Swing Low"] = (
+        (c - last_low) / c * 100
+    )
+    df["Distance to support %"] = (
+    (c - last_low) / c * 100
+    )
+
+    df["Distance to resistance %"] = (
+        (last_high - c) / c * 100
+    )
     if pbar:
         pbar.update(1)
         pbar.close()

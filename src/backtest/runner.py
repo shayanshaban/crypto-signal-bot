@@ -14,7 +14,7 @@ from src.backtest import state as st
 from src.trading.rule_engine import RuleEngine, SetupCandidate, SetupType
 from src.ml.feature_engineering import FeatureExtractor
 from src.ml.triple_barrier import TripleBarrierLabeler, TradeRecord
-from src.ml.dataset_storage import save_sample
+from src.ml.dataset_storage import save_market_snapshot
 from src.data.baker import enrich_dataframe
 from src.data.baker import calculate_reward_r
 
@@ -30,6 +30,35 @@ def _make_per_thread_resources():
 
 MAX_HOLDING_CANDLES = 20 
 TARGET_SETUP = SetupType.RSI_DIVERGENCE
+def check_position(position,future_candles):
+    exit_price = None
+    for candle in future_candles:
+
+            if position["side"] == "LONG":
+
+                if candle["Low"] <= position["stop_loss"]:
+                    exit_price = position["stop_loss"]
+                    break
+
+                if candle["High"] >= position["take_profit"]:
+                    exit_price = position["take_profit"]
+                    break
+
+            else:
+
+                if candle["High"] >= position["stop_loss"]:
+                    exit_price = position["stop_loss"]
+                    break
+
+                if candle["Low"] <= position["take_profit"]:
+                    exit_price = position["take_profit"]
+                    break
+
+    if exit_price is None:
+        exit_price = future_candles[-1]["Close"]
+
+    return exit_price
+
 def run_thread(thread_state: dict) -> None:
     thread_index = thread_state["thread_index"]
     start_ts = thread_state["start_ts"]
@@ -42,101 +71,95 @@ def run_thread(thread_state: dict) -> None:
     feature_extractor = res["feature_extractor"]
     labeler = res["labeler"]
 
-
+    index = 0
     while True:
         candle = db.get_next_baseline_candle_in_range(start_ts, end_ts)
         if candle is None:
             thread_state["status"] = "done"
             st.save_thread_state(thread_index, thread_state)
             return
-        # candle_window = db.get_candles_for_trigger(
-        #     candle["Timestamp"], config.TRADING_TIME_FRAME,500)
-        row = db.get_enriched_window(candle["id"],500)
-        df_window = db.enriched_rows_to_dataframe(row)
-        # df_window = enrich_dataframe(df_window)
-        candidates = rule_engine.detect_setups(
-            df_window, config.SYMBOL_DISPLAY, config.TRADING_TIME_FRAME
-        )
         baseline_timestamp = candle["Timestamp"]
         baseline_id = candle["id"]
         timestamp = candle["Timestamp"]
-        for candidate in candidates:
+           
+        if index > 0:
+            db.mark_baseline_candle_checked(baseline_id)
+            thread_state["last_processed_ts"] = baseline_timestamp
+            st.save_thread_state(thread_index, thread_state)
+            index = index - 1 
+            continue
 
-        # candidate = next(
-        #     (c for c in candidates if c.setup_type == TARGET_SETUP),
-        #     None
-        # )
+        row = db.get_enriched_window(candle["id"],500)
+        df_window = db.enriched_rows_to_dataframe(row)
+       
+        atr = df_window.iloc[-1]["atr14"]
 
-            if candidate is None:
-                continue
-            
-            pos_id = db.open_back_test_position(
-                        {
-                            "symbol": candidate.symbol,
-                            "position": candidate.side,
-                            "entry": candidate.entry_price,
-                            "stop_loss": candidate.stop_loss,
-                            "take_profit": candidate.take_profit,
-                            "confidence": 100,
-                            "reason": f"Rule: {candidate.setup_type.value}",
-                        },
-                        signal_id=None,
-                        timeframe=config.TRADING_TIME_FRAME,
-                        entry_timestamp=candle["Timestamp"],
-                        thread_index=thread_index,
-                    )
-            
-            
-            future_candles = db.get_future_candles(baseline_timestamp)
-            exit_price = None
-            for candle in future_candles:
+        if atr is None or atr == 0:
+            continue
 
-                if candidate.side == "LONG":
+        entry = candle["Close"]
 
-                    if candle["Low"] <= candidate.stop_loss:
-                        exit_price = candidate.stop_loss
-                        db.check_position_tp_sl(pos_id,candle)
-                        break
+        stop_loss = entry - 1.5 * atr
+        take_profit = entry + 3.0 * atr
+        future_candles = db.get_future_candles(baseline_timestamp,1000)
+        exit_price = None
+        position = {
+            "side" : "LONG",
+            "entry" : candle["Close"],
+            "stop_loss" : stop_loss,
+            "take_profit" : take_profit
+        }
 
-                    if candle["High"] >= candidate.take_profit:
-                        exit_price = candidate.take_profit
-                        db.check_position_tp_sl(pos_id,candle)
-                        break
+        exit_price = check_position(position,future_candles)
+        
+        result_r = calculate_reward_r(
+            position["side"],
+            position["entry"],
+            exit_price,
+            position["stop_loss"])
+        
+        
+        save_market_snapshot(
+            df_window,
+            config.SYMBOL_DISPLAY,
+            config.TRADING_TIME_FRAME,
+            timestamp,
+            position["side"],
+            result_r)
+        
+        stop_loss = entry + 1.5 * atr
+        take_profit = entry - 3.0 * atr
 
-                else:
+        position = {
+            "side" : "SHORT",
+            "entry" : candle["Close"],
+            "stop_loss" : stop_loss,
+            "take_profit" : take_profit
+        }
 
-                    if candle["High"] >= candidate.stop_loss:
-                        exit_price = candidate.stop_loss
-                        db.check_position_tp_sl(pos_id,candle)
-                        break
-
-                    if candle["Low"] <= candidate.take_profit:
-                        exit_price = candidate.take_profit
-                        db.check_position_tp_sl(pos_id,candle)
-                        break
-
-            if exit_price is None:
-                exit_price = future_candles[-1]["Close"]
-            
-            result_r = calculate_reward_r(
-                candidate.side,
-                candidate.entry_price,
-                exit_price,
-                candidate.stop_loss)
-            
-            
-            save_sample(
-                df_window,
-                config.SYMBOL_DISPLAY,
-                config.TRADING_TIME_FRAME,
-                timestamp,
-                candidate.side,
-                candidate.setup_type.value,
-                result_r)
+        exit_price = check_position(position,future_candles)
+        
+        result_r = calculate_reward_r(
+            position["side"],
+            position["entry"],
+            exit_price,
+            position["stop_loss"])
+        
+        
+        save_market_snapshot(
+            df_window,
+            config.SYMBOL_DISPLAY,
+            config.TRADING_TIME_FRAME,
+            timestamp,
+            position["side"],
+            result_r)
         
         db.mark_baseline_candle_checked(baseline_id)
         thread_state["last_processed_ts"] = baseline_timestamp
         st.save_thread_state(thread_index, thread_state)
+        index = 3
+
+        
         # if candle is None:
         #     thread_state["status"] = "done"
         #     st.save_thread_state(thread_index, thread_state)

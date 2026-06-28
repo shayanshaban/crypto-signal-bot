@@ -25,6 +25,7 @@ from src.trading       import signal_handler
 from src.notifications import notify
 from src.backtest import runner
 from src.data.drawer import backtest_draw
+from src.ml.train import train
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────
@@ -130,6 +131,8 @@ def main() -> None:
         data_extractor.import_zip_folder(config.IMPORT_DATA_FOLDER_DIR)
     elif args[0] == "clear-historical":
         db.reset_back_test_db(True)
+    elif args[0] == "train":
+        train()
     else:
         print(__doc__)
         sys.exit(1)

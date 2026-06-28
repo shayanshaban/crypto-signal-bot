@@ -90,6 +90,52 @@ DB_TO_DF_MAP = {
 
     "timestamp": "Timestamp",
     "candle_id": "id",
+    "ema9_slope": "EMA9 slope",
+    "ema21_slope": "EMA21 slope",
+    "ema50_slope": "EMA50 slope",
+    "ema200_slope": "EMA200 slope",
+
+    "rsi_slope": "RSI slope",
+
+    "stoch_rsi_slope": "Stoch RSI slope",
+
+    "return_1": "Return 1",
+    "return_3": "Return 3",
+    "return_5": "Return 5",
+    "return_10": "Return 10",
+    "return_20": "Return 20",
+
+    "volatility_10": "Volatility 10",
+    "volatility_20": "Volatility 20",
+
+    "highest_20": "Highest 20",
+    "lowest_20": "Lowest 20",
+
+    "distance_highest20": "Distance Highest20",
+    "distance_lowest20": "Distance Lowest20",
+
+    "body_pct": "Body %",
+    "upper_wick_pct": "Upper wick %",
+    "lower_wick_pct": "Lower wick %",
+
+    "prev_high_dist": "Prev High Dist",
+    "prev_low_dist": "Prev Low Dist",
+
+    "bull_ratio_10": "Bull Ratio 10",
+    "avg_body10": "Avg Body10",
+
+    "close_position": "Close Position",
+
+    "hour": "Hour",
+    "day_of_week": "Day of Week",
+    "session": "Session",
+
+    "trend_age": "Trend age",
+    "bars_since_ema_cross": "Bars Since EMA Cross",
+    "ema9_vs_ema21": "EMA9 vs EMA21",
+
+    "distance_last_swing_high": "Distance Last Swing High",
+    "distance_last_swing_low": "Distance Last Swing Low",
 }
 
 # ── Connection ────────────────────────────────────────────────────────────────
@@ -225,79 +271,114 @@ def init_db() -> None:
             )
         """)
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS enriched_candles (
-            id INTEGER PRIMARY KEY,
-            candle_id INTEGER NOT NULL UNIQUE,
+                CREATE TABLE IF NOT EXISTS enriched_candles (
+                    id INTEGER PRIMARY KEY,
+                    candle_id INTEGER NOT NULL UNIQUE,
 
-            timestamp INTEGER NOT NULL,
-            symbol TEXT NOT NULL,
-            timeframe TEXT NOT NULL,
-                    
-            open REAL,
-            high REAL,
-            low REAL,
-            close REAL,
-            volume REAL,
+                    timestamp INTEGER NOT NULL,
+                    symbol TEXT NOT NULL,
+                    timeframe TEXT NOT NULL,
+                            
+                    open REAL,
+                    high REAL,
+                    low REAL,
+                    close REAL,
+                    volume REAL,
 
-            change_pct REAL,
-            period_high REAL,
-            period_low REAL,
-            position_in_period_range REAL,
+                    change_pct REAL,
+                    period_high REAL,
+                    period_low REAL,
+                    position_in_period_range REAL,
 
-            ema9 REAL,
-            price_vs_ema9 REAL,
+                    ema9 REAL,
+                    price_vs_ema9 REAL,
 
-            ema21 REAL,
-            price_vs_ema21 REAL,
+                    ema21 REAL,
+                    price_vs_ema21 REAL,
 
-            ema50 REAL,
-            price_vs_ema50 REAL,
+                    ema50 REAL,
+                    price_vs_ema50 REAL,
 
-            ema200 REAL,
-            price_vs_ema200 REAL,
+                    ema200 REAL,
+                    price_vs_ema200 REAL,
 
-            ema_alignment REAL,
-            ema50_vs_ema200 REAL,
+                    ema_alignment REAL,
+                    ema50_vs_ema200 REAL,
 
-            rsi REAL,
-            rsi_zone TEXT,
+                    rsi REAL,
+                    rsi_zone TEXT,
 
-            stoch_rsi REAL,
-            stoch_rsi_zone TEXT,
+                    stoch_rsi REAL,
+                    stoch_rsi_zone TEXT,
 
-            macd_line REAL,
-            macd_signal REAL,
-            macd_histogram REAL,
-            macd_position TEXT,
-            macd_cross INTEGER,
+                    macd_line REAL,
+                    macd_signal REAL,
+                    macd_histogram REAL,
+                    macd_position TEXT,
+                    macd_cross INTEGER,
 
-            bb_upper REAL,
-            bb_mid REAL,
-            bb_lower REAL,
-            bb_width_pct REAL,
-            bb_position REAL,
-            bb_signal TEXT,
-            bb_squeeze TEXT,
+                    bb_upper REAL,
+                    bb_mid REAL,
+                    bb_lower REAL,
+                    bb_width_pct REAL,
+                    bb_position REAL,
+                    bb_signal TEXT,
+                    bb_squeeze TEXT,
 
-            atr14 REAL,
-            atr_pct_price REAL,
+                    atr14 REAL,
+                    atr_pct_price REAL,
 
-            volume_avg20 REAL,
-            volume_ratio REAL,
-            volume_signal TEXT,
-            volume_trend REAL,
+                    volume_avg20 REAL,
+                    volume_ratio REAL,
+                    volume_signal TEXT,
+                    volume_trend REAL,
 
-            obv_trend INTEGER,
+                    obv_trend INTEGER,
 
-            market_structure TEXT,
+                    market_structure TEXT,
 
-            candle_type TEXT,
-            engulfing TEXT,
-            last_3_candles TEXT,
+                    candle_type TEXT,
+                    engulfing TEXT,
+                    last_3_candles TEXT,
 
-            distance_to_support_pct REAL,
-            distance_to_resistance_pct REAL
-        );
+                    distance_to_support_pct REAL,
+                    distance_to_resistance_pct REAL,
+
+                    -- new fields
+                    ema9_slope REAL,
+                    ema21_slope REAL,
+                    ema50_slope REAL,
+                    ema200_slope REAL,
+                    rsi_slope REAL,
+                    stoch_rsi_slope REAL,
+                    return_1 REAL,
+                    return_3 REAL,
+                    return_5 REAL,
+                    return_10 REAL,
+                    return_20 REAL,
+                    volatility_10 REAL,
+                    volatility_20 REAL,
+                    highest_20 REAL,
+                    lowest_20 REAL,
+                    distance_highest20 REAL,
+                    distance_lowest20 REAL,
+                    body_pct REAL,
+                    upper_wick_pct REAL,
+                    lower_wick_pct REAL,
+                    prev_high_dist REAL,
+                    prev_low_dist REAL,
+                    bull_ratio_10 REAL,
+                    avg_body10 REAL,
+                    close_position REAL,
+                    hour INTEGER,
+                    day_of_week INTEGER,
+                    session TEXT,
+                    trend_age INTEGER,
+                    bars_since_ema_cross INTEGER,
+                    ema9_vs_ema21 REAL,
+                    distance_last_swing_high REAL,
+                    distance_last_swing_low REAL
+            );
         
         
         """)
@@ -340,7 +421,7 @@ def insert_enriched_dataframe(
     timeframe: str
 ):
     rows = []
-    placeholders = ",".join(["?"] * 52)   # اکنون ۵۲ ستون
+    placeholders = ",".join(["?"] * 85)   # 52 original + 33 new = 85
     for _, row in df.iterrows():
         rows.append((
             int(row["id"]),
@@ -395,6 +476,40 @@ def insert_enriched_dataframe(
             row.get("Last 3 candles"),
             row.get("Distance to support %"),
             row.get("Distance to resistance %"),
+            # new fields
+            row.get("EMA9 slope"),
+            row.get("EMA21 slope"),
+            row.get("EMA50 slope"),
+            row.get("EMA200 slope"),
+            row.get("RSI slope"),
+            row.get("Stoch RSI slope"),
+            row.get("Return 1"),
+            row.get("Return 3"),
+            row.get("Return 5"),
+            row.get("Return 10"),
+            row.get("Return 20"),
+            row.get("Volatility 10"),
+            row.get("Volatility 20"),
+            row.get("Highest 20"),
+            row.get("Lowest 20"),
+            row.get("Distance Highest20"),
+            row.get("Distance Lowest20"),
+            row.get("Body %"),
+            row.get("Upper wick %"),
+            row.get("Lower wick %"),
+            row.get("Prev High Dist"),
+            row.get("Prev Low Dist"),
+            row.get("Bull Ratio 10"),
+            row.get("Avg Body10"),
+            row.get("Close Position"),
+            int(row.get("Hour", 0)),
+            int(row.get("Day of Week", 0)),
+            row.get("Session"),
+            int(row.get("Trend age", 0)),
+            int(row.get("Bars Since EMA Cross", 0)),
+            row.get("EMA9 vs EMA21"),
+            row.get("Distance Last Swing High"),
+            row.get("Distance Last Swing Low"),
         ))
     with _db() as cur:
         cur.executemany(f"""
@@ -450,7 +565,40 @@ def insert_enriched_dataframe(
                 engulfing,
                 last_3_candles,
                 distance_to_support_pct,
-                distance_to_resistance_pct
+                distance_to_resistance_pct,
+                ema9_slope,
+                ema21_slope,
+                ema50_slope,
+                ema200_slope,
+                rsi_slope,
+                stoch_rsi_slope,
+                return_1,
+                return_3,
+                return_5,
+                return_10,
+                return_20,
+                volatility_10,
+                volatility_20,
+                highest_20,
+                lowest_20,
+                distance_highest20,
+                distance_lowest20,
+                body_pct,
+                upper_wick_pct,
+                lower_wick_pct,
+                prev_high_dist,
+                prev_low_dist,
+                bull_ratio_10,
+                avg_body10,
+                close_position,
+                hour,
+                day_of_week,
+                session,
+                trend_age,
+                bars_since_ema_cross,
+                ema9_vs_ema21,
+                distance_last_swing_high,
+                distance_last_swing_low
             )
             VALUES (
                 {placeholders}
@@ -467,7 +615,7 @@ def enriched_rows_to_dataframe(rows: list[dict]) -> pd.DataFrame:
     df = pd.DataFrame(rows)
 
     # Rename DB columns -> enrich_dataframe columns
-    df = df.rename(columns=DB_TO_DF_MAP)
+    # df = df.rename(columns=DB_TO_DF_MAP)
 
     
     # if "id" in df.columns:

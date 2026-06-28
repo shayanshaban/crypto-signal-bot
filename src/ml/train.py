@@ -1,90 +1,154 @@
-""" src/ml/train.py — Train XGBoost/LightGBM/CatBoost on collected dataset. """
-
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import classification_report, accuracy_score
-import xgboost as xgb
-import lightgbm as lgb
-import catboost as cb
-from src.ml.dataset_storage import DatasetStorage
+import config
+from catboost import CatBoostClassifier
+from collections import Counter
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score,
+)
+DATASET_FILE = config.DATASET_DIR  + "/ml_dataset.csv"
 
 
-class MLTrainer:
-    """Train ML models on the collected dataset."""
 
-    def __init__(self, model_type: str = "xgboost"):
-        self.model_type = model_type
-        self.model = None
-        self.feature_columns = None
-        self.label_encoder = LabelEncoder()
+def clean_dataset(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Clean trading dataset before ML training.
 
-    def prepare_data(self, df: pd.DataFrame) -> tuple:
-        """Prepare features and labels for training."""
-        # Exclude non-feature columns
-        exclude = ['trade_id', 'candle_ts', 'entry_price', 'stop_loss',
-                   'take_profit', 'exit_price', 'holding_candles',
-                   'return_pct', 'pnl_r', 'triple_barrier', 'llm_decision']
+    - Remove duplicate samples
+    - Sort chronologically
+    - Fill categorical missing values
+    - Add support/resistance existence flags
+    - Keep MACD NaNs (CatBoost handles them natively)
+    """
 
-        # Separate features and target
-        X = df.drop(columns=exclude + ['triple_barrier'], errors='ignore')
-        y = df['triple_barrier']
+    df = df.copy()
 
-        # Encode categorical columns
-        for col in X.select_dtypes(include=['object']).columns:
-            X[col] = self.label_encoder.fit_transform(X[col].astype(str))
+    # Remove duplicate samples
+    df = df.drop_duplicates(subset="sample_id")
 
-        self.feature_columns = X.columns.tolist()
-        return X, y
+    # Sort chronologically
+    df = df.sort_values("candle_ts").reset_index(drop=True)
 
-    def train(self, df: pd.DataFrame, test_size: float = 0.2) -> dict:
-        """Train the selected model and return metrics."""
-        X, y = self.prepare_data(df)
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=42, stratify=y
-        )
+    # ---------- Categorical ----------
+    df["engulfing"] = df["engulfing"].fillna("none")
 
-        if self.model_type == "xgboost":
-            self.model = xgb.XGBClassifier(
-                n_estimators=200,
-                max_depth=6,
-                learning_rate=0.05,
-                random_state=42
-            )
-        elif self.model_type == "lightgbm":
-            self.model = lgb.LGBMClassifier(
-                n_estimators=200,
-                max_depth=6,
-                learning_rate=0.05,
-                random_state=42
-            )
-        elif self.model_type == "catboost":
-            self.model = cb.CatBoostClassifier(
-                iterations=200,
-                depth=6,
-                learning_rate=0.05,
-                random_seed=42,
-                verbose=False
-            )
-        else:
-            raise ValueError(f"Unknown model type: {self.model_type}")
+    # ---------- Support ----------
+    df["has_support"] = (
+        df["distance_support"]
+        .notna()
+        .astype("int8")
+    )
 
-        self.model.fit(X_train, y_train)
+    df["distance_support"] = df["distance_support"].fillna(-1.0)
 
-        # Evaluate
-        y_pred = self.model.predict(X_test)
-        metrics = {
-            'accuracy': accuracy_score(y_test, y_pred),
-            'report': classification_report(y_test, y_pred, output_dict=True),
-            'feature_importance': dict(zip(self.feature_columns,
-                                           self.model.feature_importances_))
-        }
+    # ---------- Resistance ----------
+    df["has_resistance"] = (
+        df["distance_resistance"]
+        .notna()
+        .astype("int8")
+    )
 
-        return metrics
+    df["distance_resistance"] = df["distance_resistance"].fillna(-1.0)
 
-    def predict(self, features: pd.DataFrame) -> np.ndarray:
-        """Predict labels for new features."""
-        if self.model is None:
-            raise ValueError("Model not trained yet.")
-        return self.model.predict(features)
+    df["is_win"] = (df["result_r"] > 0).astype(int)
+
+    # IMPORTANT:
+    # Leave MACD NaNs unchanged.
+    # CatBoost can handle missing numerical values natively.
+    # They also indicate that MACD was unavailable for that setup
+    # or during indicator warm-up.
+
+    return df
+def train():
+    df = pd.read_csv(DATASET_FILE)
+
+    df = clean_dataset(df)
+    print(df["is_win"].value_counts())
+    print(df["is_win"].value_counts(normalize=True))
+    
+    TARGET = "is_win"
+
+    DROP_COLUMNS = [
+        "sample_id",
+        "candle_ts",
+        TARGET,
+        "result_r",
+    ]
+
+    X = df.drop(columns=DROP_COLUMNS)
+    y = df[TARGET]
+    CAT_FEATURES = [
+        "symbol",
+        "timeframe",
+        "setup_type",
+        "side",
+        "market_structure",
+        "candle_type",
+        "engulfing",
+        "last_3_candles",
+    ]
+    split = int(len(df) * 0.8)
+
+    X_train = X.iloc[:split]
+    X_test = X.iloc[split:]
+
+    y_train = y.iloc[:split]
+    y_test = y.iloc[split:]
+
+    counter = Counter(y_train)
+    model = CatBoostClassifier(
+        iterations=3000,
+        learning_rate=0.03,
+        depth=8,
+
+        loss_function="Logloss",
+        eval_metric="AUC",
+
+        random_seed=42,
+
+        verbose=100,
+
+        early_stopping_rounds=200,
+        auto_class_weights="Balanced"
+    )
+    model.fit(
+        X_train,
+        y_train,
+
+        cat_features=CAT_FEATURES,
+
+        eval_set=(X_test, y_test),
+    )
+    # print(model.best_iteration_)
+    # print(model.best_score_)
+    # pred = model.predict(X_test)
+
+    # print("MAE :", mean_absolute_error(y_test, pred))
+
+    # print("RMSE:", np.sqrt(mean_squared_error(y_test, pred)))
+
+    # print("R²  :", r2_score(y_test, pred))
+   
+    # print(df["result_r"].describe())
+
+    # print(df["result_r"].value_counts().sort_index())
+
+    # print(df["setup_type"].value_counts())
+
+    # print(model.get_feature_importance())
+    pred = model.predict(X_test)
+    prob = model.predict_proba(X_test)[:, 1]
+
+    print("Accuracy :", accuracy_score(y_test, pred))
+    print("Precision:", precision_score(y_test, pred))
+    print("Recall   :", recall_score(y_test, pred))
+    print("F1 Score :", f1_score(y_test, pred))
+    print("ROC AUC  :", roc_auc_score(y_test, prob))
+    importance = model.get_feature_importance()
+
+    for col, imp in sorted(zip(X.columns, importance), key=lambda x: x[1], reverse=True):
+        print(f"{col:30} {imp:.2f}")

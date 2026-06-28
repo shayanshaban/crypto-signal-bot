@@ -1,4 +1,4 @@
-""" src/ml/dataset_storage.py — Store labeled trades as Apache Parquet. """
+""" src/ml/dataset_storage.py — Store labeled trades. """
 
 import pandas as pd
 from pathlib import Path
@@ -10,6 +10,72 @@ import numpy as np
 from typing import List, Dict, Any, Optional, Union
 
 
+def row_to_sample(
+    row: pd.Series,
+    symbol: str,
+    timeframe: str,
+    candle_ts: int,
+    side: str,
+    result_r: float,
+) -> Dict[str, Any]:
+    """
+    Convert a single enriched row (pd.Series) into a sample dictionary,
+    including **all** columns present in the row – no hard‑coded mapping.
+
+    Parameters
+    ----------
+    row : pd.Series
+        One row of the enriched DataFrame (e.g. df.iloc[-1]).
+    symbol : str
+    timeframe : str
+    candle_ts : int
+        Unix timestamp of the candle.
+    side : str
+        'long' or 'short'.
+    setup_type : any, optional
+    result_r : any, optional
+
+    Returns
+    -------
+    dict
+        {
+            "sample_id": ...,
+            "symbol": ...,
+            "timeframe": ...,
+            "candle_ts": ...,
+            "setup_type": ...,
+            "side": ...,
+            "result_r": ...,
+            <every column from `row` as key: value>
+        }
+    """
+    # Base metadata
+    sample = {
+        "sample_id": f"{symbol}_{timeframe}_{candle_ts}_{side}_{result_r:.4f}",
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "candle_ts": candle_ts,
+        "side": side,
+    }
+
+    # Append every column from the row – no fixed mapping
+    row = row.iloc[-1]
+    for col, val in row.items():
+        # Replace NaN with None for clean JSON/YAML output
+        if isinstance(val, (float, np.floating)) and np.isnan(val):
+            val = None
+        sample[col] = val
+
+    if result_r is not None:
+        sample["result_r"] = result_r
+
+    if (result_r > 0):
+        sample["status"] = "WIN"
+    else:
+        sample["status"] = "LOSE"
+
+
+    return sample
 def df_to_sample(
     df: pd.DataFrame,
     symbol: str,
@@ -135,6 +201,29 @@ def save_sample(sample_df: pd.DataFrame,symbol: str,timeframe: str,candle_ts:int
     if result_r is None:
         return
     sample = df_to_sample(sample_df,symbol,timeframe,candle_ts,side,setup_type,result_r)
+    
+    df = pd.DataFrame([sample])
+
+    if Path(DATASET_FILE).exists():
+        df.to_csv(
+            DATASET_FILE,
+            mode="a",
+            header=False,
+            index=False,
+            encoding="utf-8"
+        )
+    else:
+        df.to_csv(
+            DATASET_FILE,
+            index=False,
+            header=True,
+            encoding="utf-8"
+        )
+def save_market_snapshot(sample_df: pd.DataFrame,symbol: str,timeframe: str,candle_ts:int,side: str,result_r:float):
+    DATASET_FILE = config.DATASET_DIR  + "/ml_dataset_v2.csv"
+    if result_r is None:
+        return
+    sample = row_to_sample(sample_df,symbol,timeframe,candle_ts,side,result_r)
     
     df = pd.DataFrame([sample])
 

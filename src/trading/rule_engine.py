@@ -13,15 +13,15 @@ from src.data.baker import enrich_dataframe
 
 
 class SetupType(Enum):
-    TREND_PULLBACK = "trend_pullback"
-    BREAKOUT = "breakout"
-    EMA_CROSS = "ema_cross"
-    MEAN_REVERSION = "mean_reversion"
-    LIQUIDITY_SWEEP = "liquidity_sweep"
-    BB_SQUEEZE_BREAKOUT = "bb_squeeze_breakout"
-    MACD_CROSS = "macd_cross"
-    RSI_DIVERGENCE = "rsi_divergence"
-    PINBAR_CONFIRM = "pinbar_confirm"
+    TREND_PULLBACK = "trend_pullback" # +20000
+    BREAKOUT = "breakout"#no
+    EMA_CROSS = "ema_cross" # +967
+    MEAN_REVERSION = "mean_reversion" # +1052
+    LIQUIDITY_SWEEP = "liquidity_sweep"#no
+    BB_SQUEEZE_BREAKOUT = "bb_squeeze_breakout" # +1122
+    MACD_CROSS = "macd_cross"# +60
+    RSI_DIVERGENCE = "rsi_divergence" # +5272
+    PINBAR_CONFIRM = "pinbar_confirm" # +374
 
 
 @dataclass
