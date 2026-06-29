@@ -15,6 +15,7 @@ import requests
 import config
 from src.data import baker
 from src.db            import manager as db
+import pandas as pd
 
 # ── LBank ────────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,63 @@ def _get_current_price() -> dict:
     r.raise_for_status()
     return r.json()
 
+def fetch_lbank_df(
+    count: int,
+    timeframe: str = "minute15",              # "M1", "M5", "H1", "D1", …
+    symbol: str = config.SYMBOL_LBANK   # e.g. "btc_usdt"
+) -> pd.DataFrame:
+    """
+    Fetch the last `count` candles from LBank and return a DataFrame.
+
+    Parameters
+    ----------
+    count : int
+        Number of candles to retrieve (positive integer).
+    timeframe : str
+        LBank timeframe identifier (default "H1").
+    symbol : str
+        Trading pair symbol.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: Close, Open, High, Low, Timestamp
+    """
+    if count <= 0:
+        raise ValueError("count must be a positive integer")
+
+    # Calculate time window
+    # Map common timeframes to minutes for the time window calculation
+    tf_map = {
+        "minute1": 1, "minute5": 5, "minute15": 15, "M30": 30,
+        "H1": 60, "H4": 240, "D1": 1440, "W1": 10080,
+    }
+    tf_minutes = tf_map.get(timeframe)
+    if tf_minutes is None:
+        raise ValueError(f"Unsupported timeframe: {timeframe}")
+
+
+    
+    data = _get_candles(timeframe,tf_minutes,count)
+
+    # LBank returns a "data" list: [timestamp, open, high, low, close, volume]
+    candles = data.get("data", [])
+    if not candles:
+        raise RuntimeError("No candle data returned from LBank")
+
+    # Build DataFrame
+    df = pd.DataFrame(
+        candles,
+        columns=["Timestamp", "Open", "High", "Low", "Close", "Volume"]
+    )
+    
+
+    # Ensure correct numeric types
+    for col in ["Close", "Open", "High", "Low"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df["Timestamp"] = pd.to_numeric(df["Timestamp"], errors="coerce").astype("int64")
+
+    return df
 
 def fetch_data() -> None:
     """

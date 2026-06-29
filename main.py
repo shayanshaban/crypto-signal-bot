@@ -26,6 +26,9 @@ from src.notifications import notify
 from src.backtest import runner
 from src.data.drawer import backtest_draw
 from src.ml.train import train
+from src.ml.prediction import predictor
+from src.data.baker import enrich_dataframe
+from src.data.fetcher import fetch_lbank_df
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────
@@ -95,6 +98,17 @@ def cmd_positions() -> None:
     print()
     db.print_summary()
 
+def predict():
+    df = fetch_lbank_df(700,config.TRADING_TIME_FRAME)
+    print(df.tail(1)["Close"])
+    enriched_data = enrich_dataframe(df)
+    prob = predictor.predict_probability(
+    enriched_data=enriched_data,
+    side="SHORT",
+    timeframe=config.TRADING_TIME_FRAME,
+    symbol= config.SYMBOL_DISPLAY
+    )
+    print(prob)
 
 # ── Router ────────────────────────────────────────────────────────────────────
 
@@ -133,6 +147,8 @@ def main() -> None:
         db.reset_back_test_db(True)
     elif args[0] == "train":
         train()
+    elif args[0] == "predict":
+        predict()
     else:
         print(__doc__)
         sys.exit(1)

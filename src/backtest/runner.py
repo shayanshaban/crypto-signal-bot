@@ -12,8 +12,6 @@ from src.ai.llm_confirmer import LLMConfirmer
 from src.db import manager as db
 from src.backtest import state as st
 from src.trading.rule_engine import RuleEngine, SetupCandidate, SetupType
-from src.ml.feature_engineering import FeatureExtractor
-from src.ml.triple_barrier import TripleBarrierLabeler, TradeRecord
 from src.ml.dataset_storage import save_market_snapshot
 from src.data.baker import enrich_dataframe
 from src.data.baker import calculate_reward_r
@@ -24,8 +22,7 @@ def _make_per_thread_resources():
     return {
         "rule_engine": RuleEngine(),
         "llm_confirmer": LLMConfirmer(),
-        "feature_extractor": FeatureExtractor(),
-        "labeler": TripleBarrierLabeler(max_holding_bars=config.MAX_HOLDING_BARS),
+        
     }
 
 MAX_HOLDING_CANDLES = 20 

@@ -143,6 +143,120 @@ MAX_HOLDING_BARS = 120
 
 # Dataset
 DATASET_DIR = str(ROOT / "dataset")
+MODEL_SAVE_PATH = str(ROOT / "models")
+
+FEUTURES = {
+    "open": "Open",
+    "high": "High",
+    "low": "Low",
+    "close": "Close",
+    "volume": "Volume",
+    "change_pct": "Change %",
+    "period_high": "Period high",
+    "period_low": "Period low",
+    "position_in_period_range": "Position in period range",
+
+    "ema9": "EMA9",
+    "ema21": "EMA21",
+    "ema50": "EMA50",
+    "ema200": "EMA200",
+
+    "price_vs_ema9": "Price vs EMA9",
+    "price_vs_ema21": "Price vs EMA21",
+    "price_vs_ema50": "Price vs EMA50",
+    "price_vs_ema200": "Price vs EMA200",
+
+    "ema_alignment": "EMA alignment",
+    "ema50_vs_ema200": "EMA50 vs EMA200",
+
+    "rsi": "RSI(14)",
+    "rsi_zone": "RSI zone",
+
+    "stoch_rsi": "Stoch RSI",
+    "stoch_rsi_zone": "Stoch RSI zone",
+
+    "macd_line": "MACD line",
+    "macd_signal": "MACD signal",
+    "macd_histogram": "MACD histogram",
+    "macd_position": "MACD position",
+    "macd_cross": "MACD cross",
+
+    "bb_upper": "BB upper",
+    "bb_mid": "BB mid",
+    "bb_lower": "BB lower",
+    "bb_width_pct": "BB width %",
+    "bb_position": "BB position",
+    "bb_signal": "BB signal",
+    "bb_squeeze": "BB squeeze",
+
+    "atr14": "ATR(14)",
+    "atr_pct_price": "ATR % price",
+
+    "volume_avg20": "Volume avg(20)",
+    "volume_ratio": "Volume ratio",
+    "volume_signal": "Volume signal",
+    "volume_trend": "Volume trend",
+
+    "obv_trend": "OBV trend",
+
+    "market_structure": "Market structure",
+
+    "candle_type": "Candle type",
+    "engulfing": "Engulfing",
+    "last_3_candles": "Last 3 candles",
+
+    "distance_to_support_pct": "Distance to support %",
+    "distance_to_resistance_pct": "Distance to resistance %",
+
+    "timestamp": "Timestamp",
+    "candle_id": "id",
+    "ema9_slope": "EMA9 slope",
+    "ema21_slope": "EMA21 slope",
+    "ema50_slope": "EMA50 slope",
+    "ema200_slope": "EMA200 slope",
+
+    "rsi_slope": "RSI slope",
+
+    "stoch_rsi_slope": "Stoch RSI slope",
+
+    "return_1": "Return 1",
+    "return_3": "Return 3",
+    "return_5": "Return 5",
+    "return_10": "Return 10",
+    "return_20": "Return 20",
+
+    "volatility_10": "Volatility 10",
+    "volatility_20": "Volatility 20",
+
+    "highest_20": "Highest 20",
+    "lowest_20": "Lowest 20",
+
+    "distance_highest20": "Distance Highest20",
+    "distance_lowest20": "Distance Lowest20",
+
+    "body_pct": "Body %",
+    "upper_wick_pct": "Upper wick %",
+    "lower_wick_pct": "Lower wick %",
+
+    "prev_high_dist": "Prev High Dist",
+    "prev_low_dist": "Prev Low Dist",
+
+    "bull_ratio_10": "Bull Ratio 10",
+    "avg_body10": "Avg Body10",
+
+    "close_position": "Close Position",
+
+    "hour": "Hour",
+    "day_of_week": "Day of Week",
+    "session": "Session",
+
+    "trend_age": "Trend age",
+    "bars_since_ema_cross": "Bars Since EMA Cross",
+    "ema9_vs_ema21": "EMA9 vs EMA21",
+
+    "distance_last_swing_high": "Distance Last Swing High",
+    "distance_last_swing_low": "Distance Last Swing Low",
+}
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 8. Exchange Execution  [FUTURE — uncomment when ready]
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
