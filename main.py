@@ -118,7 +118,7 @@ def predict():
     symbol= config.SYMBOL_DISPLAY
     )
     if(prob > 0.67):
-        print("SHORT :",prob)
+        print("SHORT :",f"{prob:.2%}")
         return
     
     print("NO-TRADE")
