@@ -26,6 +26,7 @@ from src.notifications import notify
 from src.backtest import runner
 from src.data.drawer import backtest_draw
 from src.ml.train import train
+from src.ml.tunning import tune
 from src.ml.prediction import predictor
 from src.data.baker import enrich_dataframe
 from src.data.fetcher import fetch_lbank_df
@@ -100,7 +101,8 @@ def cmd_positions() -> None:
 
 def predict():
     df = fetch_lbank_df(2000,config.TRADING_TIME_FRAME)
-    print(df.tail(1)["Close"])
+    entry = df.iloc[-1]["Close"]
+    print("Current Price :",entry)
     enriched_data = enrich_dataframe(df)
     prob = predictor.predict_probability(
     enriched_data=enriched_data,
@@ -108,17 +110,26 @@ def predict():
     timeframe=config.TRADING_TIME_FRAME,
     symbol= config.SYMBOL_DISPLAY
     )
-    if(prob > 0.67):
+    atr = enriched_data.iloc[-1]["ATR(14)"]
+    if(prob >= 0.56):
+        stop_loss = entry - 1.5 * atr
+        take_profit = entry + 3.0 * atr
         print("LONG :",f"{prob:.2%}")
-        # return
+        print("TP :",take_profit)
+        print("SL :",stop_loss)
+        return
     prob = predictor.predict_probability(
     enriched_data=enriched_data,
     side="SHORT",
     timeframe=config.TRADING_TIME_FRAME,
     symbol= config.SYMBOL_DISPLAY
     )
-    if(prob > 0.67):
+    if(prob >= 0.56):
+        stop_loss = entry + 1.5 * atr
+        take_profit = entry - 3.0 * atr
         print("SHORT :",f"{prob:.2%}")
+        print("TP :",take_profit)
+        print("SL :",stop_loss)
         return
     
     print("NO-TRADE")
@@ -163,6 +174,8 @@ def main() -> None:
         train()
     elif args[0] == "predict":
         predict()
+    elif args[0] == "tune":
+        tune()
     else:
         print(__doc__)
         sys.exit(1)

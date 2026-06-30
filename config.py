@@ -86,7 +86,7 @@ LOG_FILE    = str(ROOT / "logs"    / "signals.log")
 # 7. Timeframes & Candles
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-TRADING_TIME_FRAME = "minute15"
+TRADING_TIME_FRAME = "minute5"
 
 CANDLES = {
     "month1":   {"tf_minutes": 43_200, "count": 24, "raw": False, "raw_and_bake": False},
