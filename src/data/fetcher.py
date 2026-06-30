@@ -72,7 +72,7 @@ def fetch_lbank_df(
     # Calculate time window
     # Map common timeframes to minutes for the time window calculation
     tf_map = {
-        "minute1": 1, "minute5": 5, "minute15": 15, "M30": 30,
+        "minute1": 1, "minute3": 3, "minute5": 5, "minute15": 15, "minute30": 30,
         "H1": 60, "H4": 240, "D1": 1440, "W1": 10080,
     }
     tf_minutes = tf_map.get(timeframe)

@@ -99,16 +99,30 @@ def cmd_positions() -> None:
     db.print_summary()
 
 def predict():
-    df = fetch_lbank_df(700,config.TRADING_TIME_FRAME)
+    df = fetch_lbank_df(2000,config.TRADING_TIME_FRAME)
     print(df.tail(1)["Close"])
     enriched_data = enrich_dataframe(df)
+    prob = predictor.predict_probability(
+    enriched_data=enriched_data,
+    side="LONG",
+    timeframe=config.TRADING_TIME_FRAME,
+    symbol= config.SYMBOL_DISPLAY
+    )
+    if(prob > 0.67):
+        print("LONG :",f"{prob:.2%}")
+        # return
     prob = predictor.predict_probability(
     enriched_data=enriched_data,
     side="SHORT",
     timeframe=config.TRADING_TIME_FRAME,
     symbol= config.SYMBOL_DISPLAY
     )
-    print(prob)
+    if(prob > 0.67):
+        print("SHORT :",prob)
+        return
+    
+    print("NO-TRADE")
+
 
 # ── Router ────────────────────────────────────────────────────────────────────
 
