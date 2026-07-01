@@ -62,11 +62,11 @@ def run_thread(thread_state: dict) -> None:
     end_ts = thread_state["end_ts"]
 
     # هر thread منابع جداگانه داره
-    res = _make_per_thread_resources()
-    rule_engine = res["rule_engine"]
-    llm_confirmer = res["llm_confirmer"]
-    feature_extractor = res["feature_extractor"]
-    labeler = res["labeler"]
+    # res = _make_per_thread_resources()
+    # rule_engine = res["rule_engine"]
+    # llm_confirmer = res["llm_confirmer"]
+    # feature_extractor = res["feature_extractor"]
+    # labeler = res["labeler"]
 
     index = 0
     while True:
@@ -86,7 +86,7 @@ def run_thread(thread_state: dict) -> None:
             index = index - 1 
             continue
 
-        row = db.get_enriched_window(candle["id"],500)
+        row = db.get_enriched_window(candle["id"],50)
         df_window = db.enriched_rows_to_dataframe(row)
        
         atr = df_window.iloc[-1]["atr14"]
