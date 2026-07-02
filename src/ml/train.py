@@ -162,7 +162,7 @@ def train():
     print(model.best_iteration_)
     print(model.best_score_)
 
-    model_save_path = config.MODEL_SAVE_PATH + "/long_short_model.cbm"
+    model_save_path = config.MODEL_SAVE_PATH + "/trained_model.cbm"
     model_save_path = Path(model_save_path)
     model_save_path.parent.mkdir(parents=True, exist_ok=True)
     
