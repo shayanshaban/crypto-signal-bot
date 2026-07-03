@@ -84,7 +84,7 @@ def clean_dataset(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def train():
-    df = pd.read_csv(DATASET_FILE)
+    df = pd.read_csv(DATASET_FILE,low_memory=False)
     df = df[df["side"].isin(["LONG", "SHORT"])].copy()
     df = clean_dataset(df)
     print(df["side"].value_counts())

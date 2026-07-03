@@ -15,10 +15,10 @@ from sklearn.metrics import (
 
 DATASET_FILE = config.DATASET_DIR + "/ml_dataset_v2.csv"
 
-MODEL_PATH = Path(config.MODEL_SAVE_PATH) / "long_short_depth10_auc0.6014_1.06M.cbm"
+MODEL_PATH = Path(config.MODEL_SAVE_PATH) / "long_short_depth10_auc0.6368_1.60M.cbm"
 
 def tune():
-    df = pd.read_csv(DATASET_FILE)
+    df = pd.read_csv(DATASET_FILE,low_memory=False)
     df = df[df["side"].isin(["LONG", "SHORT"])].copy()
     df = clean_dataset(df)
     print(df["side"].value_counts())
@@ -64,34 +64,35 @@ def tune():
     print(model.best_iteration_)
     print(model.best_score_)
   
-
+    print(model.tree_count_)
+    print(model.get_all_params())
     pred = model.predict(X_test)
     prob = model.predict_proba(X_test)[:, 1]
     pred = (prob >= 0.33).astype(int)
 
     print("ROC AUC  :", roc_auc_score(y_test, prob))
     ths = [
-        # 0.3,
-        # 0.35,
-        # 0.4,
-        # 0.45,
-        # 0.46,
-        # 0.47,
-        # 0.48,
-        # 0.49,
-        # 0.5,
-        # 0.51,
-        # 0.52,
-        # 0.53,
-        # 0.54,
-        # 0.55,
+        0.3,
+        0.35,
+        0.4,
+        0.45,
+        0.46,
+        0.47,
+        0.48,
+        0.49,
+        0.5,
+        0.51,
+        0.52,
+        0.53,
+        0.54,
+        0.55,
         0.56,
-        # 0.57,
-        # 0.58,
-        # 0.59,
-        # 0.6,
-        # 0.65,
-        # 0.7
+        0.57,
+        0.58,
+        0.59,
+        0.6,
+        0.65,
+        0.7
         ]
     for th in ths:
         pred = (prob >= th).astype(int)
