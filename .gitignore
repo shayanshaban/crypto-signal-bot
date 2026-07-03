@@ -30,7 +30,7 @@ data/back_test/*.json
 !output/.gitkeep
 !logs/.gitkeep
 historical_data/*
-dataset/
+dataset/*
 !dataset/.gitkeep
 !historical_data/.gitkeep
 

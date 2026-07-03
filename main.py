@@ -111,6 +111,12 @@ def predict():
     symbol= config.SYMBOL_DISPLAY
     )
     atr = enriched_data.iloc[-1]["ATR(14)"]
+    print("LONG :",f"{prob:.2%}")
+    stop_loss = entry - 1.5 * atr
+    take_profit = entry + 3.0 * atr
+    print("LONG :",f"{prob:.2%}")
+    print("TP :",take_profit)
+    print("SL :",stop_loss)
     if(prob >= 0.56):
         stop_loss = entry - 1.5 * atr
         take_profit = entry + 3.0 * atr
@@ -124,6 +130,12 @@ def predict():
     timeframe=config.TRADING_TIME_FRAME,
     symbol= config.SYMBOL_DISPLAY
     )
+    print("SHORT :",f"{prob:.2%}")
+    stop_loss = entry + 1.5 * atr
+    take_profit = entry - 3.0 * atr
+    print("SHORT :",f"{prob:.2%}")
+    print("TP :",take_profit)
+    print("SL :",stop_loss)
     if(prob >= 0.56):
         stop_loss = entry + 1.5 * atr
         take_profit = entry - 3.0 * atr
