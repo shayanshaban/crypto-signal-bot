@@ -30,6 +30,7 @@ from src.ml.tunning import tune
 from src.ml.prediction import predictor
 from src.data.baker import enrich_dataframe
 from src.data.fetcher import fetch_lbank_df
+from src.ml import dataset_builder
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────
@@ -188,6 +189,10 @@ def main() -> None:
         predict()
     elif args[0] == "tune":
         tune()
+    elif args[0] == "build-dataset":
+        dataset_builder.start()
+    elif args[0] == "resume-build-dataset":
+        dataset_builder.resume_dataset_builder()
     else:
         print(__doc__)
         sys.exit(1)
