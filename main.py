@@ -21,7 +21,6 @@ from src.data          import fetcher
 from src.data          import data_extractor
 from src.ai            import deepseek_client
 from src.db            import manager as db
-from src.trading       import signal_handler
 from src.notifications import notify
 from src.backtest import runner
 from src.data.drawer import backtest_draw
@@ -29,47 +28,23 @@ from src.ml.train import train
 from src.ml.tunning import tune
 from src.ml.prediction import predictor
 from src.data.baker import enrich_dataframe
-from src.data.fetcher import fetch_lbank_df
+from src.data.fetcher import fetch_lbank_df,_get_current_price
 from src.ml import dataset_builder
+
+from src.trading.wallet import WalletManager
+from src.trading.risk_manager import RiskManager
+from src.trading.trade_logger import TradeLogger
+from src.trading.paper_trader import PaperTrader
+from src.trading.constants import DEFAULT_SLIPPAGE
+
+import time
+from datetime import datetime, timezone
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 def cmd_signal() -> None:
-    print("── [1/2] Fetching market data …")
-    fetcher.fetch_data()
-    print(f"      → {config.OUTPUT_FILE}")
-
-    print("── [2/2] Querying DeepSeek …")
-    raw = deepseek_client.run_from_file(config.OUTPUT_FILE)
-
-    if not raw:
-        print("ERROR: No response from DeepSeek.", file=sys.stderr)
-        sys.exit(1)
-
-    # Full pipeline: parse → save → evaluate → open
-    result = signal_handler.process(raw["response"])
-    parsed = result["parsed"]
-
-    if parsed:
-        print("\n── Signal ─────────────────────────────────────────")
-        print(json.dumps(parsed, indent=2))
-    else:
-        print("\n── Raw response (parse failed) ─────────────────────")
-        print(raw["response"])
-
-    print(f"\n── Decision: {result['decision']} — {result['reason']}")
-
-    if result["pos_id"]:
-        notify(
-            f"OPENED {parsed['position']} {parsed['symbol']} "
-            f"@ {parsed['entry']}  SL {parsed['stop_loss']}  TP {parsed['take_profit']}"
-        )
-
-    # Also append raw to the legacy log file
-    Path(config.LOG_FILE).parent.mkdir(parents=True, exist_ok=True)
-    with open(config.LOG_FILE, "a", encoding="utf-8") as log:
-        log.write(raw["response"] + "\n")
+    pass
 
 
 def cmd_close(id,exit_price: float) -> None:
@@ -147,6 +122,94 @@ def predict():
     
     print("NO-TRADE")
 
+def trade():
+
+    # 1. Setup components
+    wallet_mgr = WalletManager("data/wallet.json")
+    risk_mgr = RiskManager()
+    logger = TradeLogger("logs/trades.jsonl")
+    trader = PaperTrader(wallet_mgr, risk_mgr, logger)
+
+    # Print initial wallet
+    wallet = wallet_mgr.load_wallet()
+
+    if (len(wallet.open_positions) != 0):
+        ticker = _get_current_price()
+
+
+        df = fetch_lbank_df(5,config.TRADING_TIME_FRAME)
+        current_price = df.iloc[-1]["High"]
+        trader.update_positions(current_price)
+        print("High Price :",current_price)
+        current_price = df.iloc[-1]["Low"]
+        trader.update_positions(current_price)
+        print("Low Price :",current_price)
+        current_price = float(ticker['data'][0]['price'])
+        print("Current Price :",current_price)
+        trader.update_positions(current_price)
+        
+        print("Positions Update")
+        return
+    
+    entry,take_profit,stop_loss,side = None,None,None,None
+
+    df = fetch_lbank_df(2000,config.TRADING_TIME_FRAME)
+    entry = df.iloc[-1]["Close"]
+    enriched_data = enrich_dataframe(df)
+    prob = predictor.predict_probability(
+        enriched_data=enriched_data,
+        side="LONG",
+        timeframe=config.TRADING_TIME_FRAME,
+        symbol= config.SYMBOL_DISPLAY
+        )
+    atr = enriched_data.iloc[-1]["ATR(14)"]
+    if(prob >= 0.56):
+        stop_loss = entry - 1.5 * atr
+        take_profit = entry + 3.0 * atr
+        side = "LONG"
+        
+    prob = predictor.predict_probability(
+        enriched_data=enriched_data,
+        side="SHORT",
+        timeframe=config.TRADING_TIME_FRAME,
+        symbol= config.SYMBOL_DISPLAY
+        )
+    if(prob >= 0.56):
+        stop_loss = entry + 1.5 * atr
+        take_profit = entry - 3.0 * atr
+        side = "SHORT"
+
+    if(entry == None or take_profit == None or stop_loss == None):
+        print("NO-TRADE")
+        return
+
+
+    # 2. Open a LONG position
+    pos = trader.open_position(
+        symbol=config.SYMBOL_DISPLAY,
+        side=side,
+        entry_price=entry,
+        stop_loss=stop_loss,
+        take_profit=take_profit,
+        risk_percent=0.01,   # risk 1% of balance
+        leverage=100,
+        slippage_rate=DEFAULT_SLIPPAGE,
+    )
+    print(f"\nOpened position {pos.id}: {pos}")
+    
+
+def paper_trade():
+    while True:
+       
+        now = datetime.now(timezone.utc)
+
+        
+        sleep_time = 60 - now.second - now.microsecond / 1_000_000
+
+        time.sleep(sleep_time+4)
+
+        trade()
+    
 
 # ── Router ────────────────────────────────────────────────────────────────────
 
@@ -193,6 +256,8 @@ def main() -> None:
         dataset_builder.start()
     elif args[0] == "resume-build-dataset":
         dataset_builder.resume_dataset_builder()
+    elif args[0] == "start-pt":
+        paper_trade()
     else:
         print(__doc__)
         sys.exit(1)

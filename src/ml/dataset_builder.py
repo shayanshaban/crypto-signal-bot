@@ -8,10 +8,8 @@ import time
 
 import config
 from src.data import fetcher
-from src.ai.llm_confirmer import LLMConfirmer
 from src.db import manager as db
 from src.backtest import state as st
-from src.trading.rule_engine import RuleEngine, SetupCandidate, SetupType
 from src.ml.dataset_storage import save_market_snapshot
 from src.data.baker import enrich_dataframe
 from src.data.baker import calculate_reward_r

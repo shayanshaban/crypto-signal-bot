@@ -8,23 +8,13 @@ import time
 
 import config
 from src.data import fetcher
-from src.ai.llm_confirmer import LLMConfirmer
 from src.db import manager as db
 from src.backtest import state as st
-from src.trading.rule_engine import RuleEngine, SetupCandidate, SetupType
 from src.ml.dataset_storage import save_market_snapshot
 from src.data.baker import enrich_dataframe
 from src.data.baker import calculate_reward_r
 from src.ml.prediction import predictor
 
-
-def _make_per_thread_resources():
-    """هر thread منابع مستقل خودش رو داره — thread-safe"""
-    return {
-        "rule_engine": RuleEngine(),
-        "llm_confirmer": LLMConfirmer(),
-        
-    }
 
 MAX_HOLDING_CANDLES = 30
 def check_position(position,future_candles):
@@ -155,19 +145,6 @@ def run_thread(thread_state: dict) -> None:
         st.save_thread_state(thread_index, thread_state)
         
 
-
-def _reconstruct_candidate(pos: dict) -> SetupCandidate:
-    return SetupCandidate(
-        setup_type=SetupType(pos.get("setup_type", "unknown")),
-        symbol=pos["symbol"],
-        side=pos["position"],
-        timeframe=pos.get("timeframe", config.TRADING_TIME_FRAME),
-        entry_price=pos["entry"],
-        stop_loss=pos["stop_loss"],
-        take_profit=pos["take_profit"],
-        features={},
-        timestamp=pos["entry_timestamp"],
-    )
 
 
 # -----------------------------------------------------------------
