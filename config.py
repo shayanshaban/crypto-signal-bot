@@ -118,7 +118,7 @@ BACK_TEST_CANDLES = {
     "hour4":    {"tf_minutes":    240, "count": 2000, "raw": False, "raw_and_bake": False},
     "minute15": {"tf_minutes":     15, "count": 2000, "raw": True, "raw_and_bake": True},
     "minute5":  {"tf_minutes":      5, "count": 2000, "raw": True, "raw_and_bake": True},
-    "minute1":  {"tf_minutes":      5, "count": 2000, "raw": True, "raw_and_bake": True},
+    "minute1":  {"tf_minutes":      1, "count": 2000, "raw": True, "raw_and_bake": True},
 }
 
 BACK_TEST_CHART_OUTPUT_FILE = str(ROOT / "output" / "backtest_chart.html")
