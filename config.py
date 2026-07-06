@@ -86,7 +86,7 @@ LOG_FILE    = str(ROOT / "logs"    / "signals.log")
 # 7. Timeframes & Candles
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-TRADING_TIME_FRAME = "minute5"
+TRADING_TIME_FRAME = "minute1"
 
 CANDLES = {
     "month1":   {"tf_minutes": 43_200, "count": 24, "raw": False, "raw_and_bake": False},
@@ -107,7 +107,7 @@ TIMEFRAME_LABELS = {
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 8. BackTester Setting
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BACK_TEST_THREAD = 1    # The Concurency of back testing
+BACK_TEST_THREAD = 4    # The Concurency of back testing
 
 BACK_TEST_WAIT_AFTER_ASK_AI = 10
 
@@ -117,6 +117,8 @@ BACK_TEST_CANDLES = {
     "day1":     {"tf_minutes":  1_440, "count": 2000, "raw": False, "raw_and_bake": False},
     "hour4":    {"tf_minutes":    240, "count": 2000, "raw": False, "raw_and_bake": False},
     "minute15": {"tf_minutes":     15, "count": 2000, "raw": True, "raw_and_bake": True},
+    "minute5":  {"tf_minutes":      5, "count": 2000, "raw": True, "raw_and_bake": True},
+    "minute1":  {"tf_minutes":      5, "count": 2000, "raw": True, "raw_and_bake": True},
 }
 
 BACK_TEST_CHART_OUTPUT_FILE = str(ROOT / "output" / "backtest_chart.html")

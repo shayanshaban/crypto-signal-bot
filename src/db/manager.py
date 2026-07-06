@@ -697,9 +697,9 @@ def open_back_test_position(signal: dict, signal_id: int | None = None,
                  entry_timestamp, thread_index, setup_type, features_json)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            signal_id, signal["symbol"], timeframe, signal["position"], signal.get("confidence"),
-            signal["entry"], signal["stop_loss"], signal["take_profit"], signal.get("risk_reward"),
-            signal.get("reason"), entry_timestamp, thread_index, setup_type, features_json
+            signal_id, signal["symbol"], timeframe, signal["side"], signal.get("confidence"),
+            signal["entry"], signal["stop_loss"], signal["take_profit"], None,
+            None, entry_timestamp, thread_index, setup_type, features_json
         ))
         return cur.lastrowid
 
