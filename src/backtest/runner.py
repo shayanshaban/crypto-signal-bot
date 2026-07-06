@@ -26,7 +26,7 @@ def _make_per_thread_resources():
         
     }
 
-MAX_HOLDING_CANDLES = 20 
+MAX_HOLDING_CANDLES = 30
 def check_position(position,future_candles):
     exit_price = None
     for candle in future_candles:
