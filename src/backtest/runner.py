@@ -101,9 +101,9 @@ def run_thread(thread_state: dict) -> None:
                 timeframe=config.TRADING_TIME_FRAME,
                 symbol= config.SYMBOL_DISPLAY
                 )
-            if(prob >= 0.56):
-                stop_loss = entry - 1.5 * atr
-                take_profit = entry + 3.0 * atr
+            if(prob >= 0.64):
+                stop_loss = entry - 2 * atr
+                take_profit = entry + 4 * atr
                 position = {
                     "side" : "LONG",
                     "entry" : candle["Close"],
@@ -118,15 +118,19 @@ def run_thread(thread_state: dict) -> None:
                     timeframe=config.TRADING_TIME_FRAME,
                     symbol= config.SYMBOL_DISPLAY
                     )
-                if(prob >= 0.56):
-                    stop_loss = entry + 1.5 * atr
-                    take_profit = entry - 3.0 * atr
+                if(prob >= 0.64):
+                    stop_loss = entry + 2 * atr
+                    take_profit = entry - 4 * atr
                     position = {
                         "side" : "SHORT",
                         "entry" : candle["Close"],
                         "stop_loss" : stop_loss,
                         "take_profit" : take_profit
                     }
+                    # db.mark_baseline_candle_checked(baseline_id)
+                    # thread_state["last_processed_ts"] = baseline_timestamp
+                    # st.save_thread_state(thread_index, thread_state)
+                    # continue
                 else:
                     db.mark_baseline_candle_checked(baseline_id)
                     thread_state["last_processed_ts"] = baseline_timestamp
