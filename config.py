@@ -88,6 +88,10 @@ LOG_FILE    = str(ROOT / "logs"    / "signals.log")
 
 TRADING_TIME_FRAME = "minute5"
 
+MIN_STOP_PERCENT = 0.0024   
+ATR_MULTIPLIER = 1.5         
+RR = 2
+
 CANDLES = {
     "month1":   {"tf_minutes": 43_200, "count": 24, "raw": False, "raw_and_bake": False},
     "week1":    {"tf_minutes": 10_080, "count": 200, "raw": False, "raw_and_bake": False},

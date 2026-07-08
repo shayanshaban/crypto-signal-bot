@@ -8,7 +8,7 @@ import config
 # نگاشت نام ستون‌های دیتافریم به نام‌های مورد انتظار مدل
 DF_TO_DB_MAP = {v: k for k, v in config.FEUTURES.items()}
 
-MODEL_PATH = Path(config.MODEL_SAVE_PATH) / "long_short_depth10_auc0.6237_2.75M.cbm"
+MODEL_PATH = Path(config.MODEL_SAVE_PATH) / "RR2" /"long_short_depth10_auc0.6237_2.75M.cbm"
 
 TARGET = "is_win"
 
