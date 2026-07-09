@@ -13,7 +13,7 @@ def init_thread_state(thread_index: int, start_ts: int, end_ts: int) -> dict:
         "thread_index": thread_index,
         "start_ts": start_ts,
         "end_ts": end_ts,
-        "last_processed_ts": None,
+        "last_processed_ts": start_ts,
         "open_position_id": None,
         "status": "running",
     }

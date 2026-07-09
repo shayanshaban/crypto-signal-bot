@@ -19,7 +19,7 @@ import queue
 
 snapshot_queue = queue.Queue(maxsize=0)
 writer_stop_event = threading.Event()
-BATCH_SIZE = 5_000
+BATCH_SIZE = 100_000
 
 def writer_loop():
     buffer = []
@@ -79,20 +79,33 @@ def get_enriched_window_mem(baseline_timestamp: int, window_size: int = 50) -> p
     start_idx = max(0, idx - window_size + 1)
     return enriched_candels.iloc[start_idx : idx + 1]
 
-def get_next_baseline_candle_in_range_mem(start_ts: int, end_ts: int) -> dict | None:
+# def get_next_baseline_candle_in_range_mem(start_ts: int, end_ts: int) -> dict | None:
    
-    idx = bisect.bisect_left(base_line_timestamps, start_ts)
+#     idx = bisect.bisect_left(base_line_timestamps, start_ts)
            
-    for i in range(idx, len(base_line_candels)):
-        candle = base_line_candels[i]
-        ts = candle["Timestamp"]
-        if ts > end_ts:
-            break                          
+#     for i in range(idx, len(base_line_candels)):
+#         candle = base_line_candels[i]
+#         ts = candle["Timestamp"]
+#         if ts > end_ts:
+#             break                          
+#         if candle["id"] not in _checked_ids:
+#             _checked_ids.add(candle["id"])
+#             return candle
+#     return None
+def get_next_baseline_candle_in_range_mem(current_index: int,start_id: int,end_id: int) -> dict | None:
+    if (current_index < start_id or current_index > end_id):
+        return None
+    if(current_index >= 0 and current_index < len(base_line_candels)):
+        candle = base_line_candels[current_index]
         if candle["id"] not in _checked_ids:
             _checked_ids.add(candle["id"])
-            return candle
+        return candle
     return None
-    
+
+def convert_ts_to_id(ts: int):
+    idx = bisect.bisect_left(base_line_timestamps, ts)
+    return idx
+
 def get_baseline_progress_mem() -> tuple[int, int]:
     """Return (checked_count, total_count) from in-memory structures."""
     total = len(base_line_candels)
@@ -109,24 +122,41 @@ def get_future_candles_mem(start_timestamp: int, limit: int = 1000) -> list[dict
     return base_line_candels[idx:idx + limit]
 
 
-def check_position(position,future_candles):
-    side = position["side"]
-    stop_loss = position["stop_loss"]
-    take_profit = position["take_profit"]
-    
-    for candle in future_candles:
-        if side == "LONG":
-            if candle["Low"] <= stop_loss:
-                return stop_loss
-            if candle["High"] >= take_profit:
-                return take_profit
-        else:  # SHORT
-            if candle["High"] >= stop_loss:
-                return stop_loss
-            if candle["Low"] <= take_profit:
-                return take_profit
+def check_positions(long_pos: dict, short_pos: dict, future_candles: list[dict]) -> tuple[float, float]:
+    """
+    با یک بار پیمایش کندل‌های آینده، نقطه خروج برای هر دو موقعیت LONG و SHORT را مشخص می‌کند.
+    اگر حد ضرر یا سود هیچ‌کدام لمس نشود، مطابق منطق قبلی، حد ضرر برگردانده می‌شود.
+    (می‌توان این پیش‌فرض را به قیمت بسته‌شدن آخرین کندل تغییر داد)
+    """
+    long_exit = None
+    short_exit = None
 
-    return stop_loss
+    for candle in future_candles:
+        # بررسی موقعیت LONG (اگر هنوز خروجش مشخص نشده)
+        if long_exit is None:
+            if candle["Low"] <= long_pos["stop_loss"]:
+                long_exit = long_pos["stop_loss"]
+            elif candle["High"] >= long_pos["take_profit"]:
+                long_exit = long_pos["take_profit"]
+
+        # بررسی موقعیت SHORT (اگر هنوز خروجش مشخص نشده)
+        if short_exit is None:
+            if candle["High"] >= short_pos["stop_loss"]:
+                short_exit = short_pos["stop_loss"]
+            elif candle["Low"] <= short_pos["take_profit"]:
+                short_exit = short_pos["take_profit"]
+
+        # اگر هر دو خروج مشخص شد، ادامه دادن بی‌فایده است
+        if long_exit is not None and short_exit is not None:
+            break
+
+    # مقدار پیش‌فرض (مطابق رفتار قبلی: حد ضرر)
+    if long_exit is None:
+        long_exit = long_pos["stop_loss"]
+    if short_exit is None:
+        short_exit = short_pos["stop_loss"]
+
+    return long_exit, short_exit
 
 def save_state(thread_state: dict,counter: int):
     if(counter % BATCH_SIZE == 0):
@@ -138,11 +168,15 @@ def run_thread(thread_state: dict) -> None:
     thread_index = thread_state["thread_index"]
     start_ts = thread_state["start_ts"]
     end_ts = thread_state["end_ts"]
-
+    id = convert_ts_to_id(int(thread_state["last_processed_ts"]))
+    start_id = convert_ts_to_id(int(thread_state["start_ts"]))
+    end_id = convert_ts_to_id(int(thread_state["end_ts"]))
     counter = 0
     index = 0
     while True:
-        candle = get_next_baseline_candle_in_range_mem(start_ts, end_ts)
+        
+        candle = get_next_baseline_candle_in_range_mem(id,start_id,end_id)
+        # candle = get_next_baseline_candle_in_range_mem(start_ts, end_ts)
         if candle is None:
             thread_state["status"] = "done"
             st.save_thread_state(thread_index, thread_state)
@@ -152,19 +186,24 @@ def run_thread(thread_state: dict) -> None:
         timestamp = candle["Timestamp"]
            
         if index > 0:
-            # db.mark_baseline_candle_checked(baseline_id)
+            # db.mark_baseline_candle_checked(baseline_id)counter = counter + 1
+            index = index - 1 
             thread_state["last_processed_ts"] = baseline_timestamp
-            # st.save_thread_state(thread_index, thread_state)
+            # st.save_thread_state(thread: int_index, thread_state)
             save_state(thread_state,counter)
+            id = id + 1
             counter = counter + 1
             index = index - 1 
             continue
 
-        df_window = get_enriched_window_mem(timestamp, 50)
+        df_window = get_enriched_window_mem(timestamp, 5)
        
         atr = df_window.iloc[-1]["atr14"]
 
         if atr is None or atr == 0:
+            id = id + 1
+            counter = counter + 1
+            index = index - 1 
             continue
 
         entry = candle["Close"]
@@ -176,50 +215,50 @@ def run_thread(thread_state: dict) -> None:
 
         
 
+        future_candles = get_future_candles_mem(baseline_timestamp,1000)
         stop_loss = entry - stop_distance
         take_profit = entry + profit_distance
-        future_candles = get_future_candles_mem(baseline_timestamp,1000)
-        exit_price = None
-        position = {
+
+        long_pos = {
             "side" : "LONG",
             "entry" : candle["Close"],
             "stop_loss" : stop_loss,
             "take_profit" : take_profit
         }
 
-        exit_price = check_position(position,future_candles)
-        
-        result_r = calculate_reward_r(
-            position["side"],
-            position["entry"],
-            exit_price,
-            position["stop_loss"])
-        
-        
-        snapshot_queue.put((df_window, config.SYMBOL_DISPLAY, config.TRADING_TIME_FRAME,
-                    timestamp, position["side"], result_r))
-        
         stop_loss = entry + stop_distance
         take_profit = entry - profit_distance
 
-        position = {
+        short_pos = {
             "side" : "SHORT",
             "entry" : candle["Close"],
             "stop_loss" : stop_loss,
             "take_profit" : take_profit
         }
 
-        exit_price = check_position(position,future_candles)
+
+        long_exit_price, short_exit_price = check_positions(long_pos, short_pos, future_candles)
         
         result_r = calculate_reward_r(
-            position["side"],
-            position["entry"],
-            exit_price,
-            position["stop_loss"])
+            long_pos["side"],
+            long_pos["entry"],
+            long_exit_price,
+            long_pos["stop_loss"])
         
         
         snapshot_queue.put((df_window, config.SYMBOL_DISPLAY, config.TRADING_TIME_FRAME,
-                    timestamp, position["side"], result_r))
+                    timestamp, long_pos["side"], result_r))
+        
+        
+        result_r = calculate_reward_r(
+            short_pos["side"],
+            short_pos["entry"],
+            short_exit_price,
+            short_pos["stop_loss"])
+        
+        
+        snapshot_queue.put((df_window, config.SYMBOL_DISPLAY, config.TRADING_TIME_FRAME,
+                    timestamp, short_pos["side"], result_r))
         
         
         # db.mark_baseline_candle_checked(baseline_id)
@@ -228,6 +267,7 @@ def run_thread(thread_state: dict) -> None:
         save_state(thread_state,counter)
         index = 3
         counter = counter + 1
+        id = id + 1
 
 
 
