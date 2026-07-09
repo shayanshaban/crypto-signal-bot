@@ -86,7 +86,7 @@ LOG_FILE    = str(ROOT / "logs"    / "signals.log")
 # 7. Timeframes & Candles
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-TRADING_TIME_FRAME = "minute5"
+TRADING_TIME_FRAME = "minute3"
 
 CANDLES = {
     "month1":   {"tf_minutes": 43_200, "count": 24, "raw": False, "raw_and_bake": False},
@@ -107,7 +107,7 @@ TIMEFRAME_LABELS = {
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 8. BackTester Setting
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BACK_TEST_THREAD = 4    # The Concurency of back testing
+BACK_TEST_THREAD = 18    # The Concurency of back testing
 
 BACK_TEST_WAIT_AFTER_ASK_AI = 10
 
