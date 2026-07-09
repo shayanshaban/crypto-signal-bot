@@ -242,3 +242,31 @@ def save_market_snapshot(sample_df: pd.DataFrame,symbol: str,timeframe: str,cand
             header=True,
             encoding="utf-8"
         )
+
+def save_market_snapshots_batch(snapshot_list: list) -> None:
+    
+    if not snapshot_list:
+        return
+
+    samples = []
+    for df_window, symbol, timeframe, timestamp, side, result_r in snapshot_list:
+        if result_r is None:
+            continue
+        sample = row_to_sample(df_window, symbol, timeframe, timestamp, side, result_r)
+        samples.append(sample)
+
+    if not samples:
+        return
+
+    df = pd.DataFrame(samples)
+
+    DATASET_FILE = config.DATASET_DIR + "/ml_dataset_v2.csv"
+    write_header = not Path(DATASET_FILE).exists()
+
+    df.to_csv(
+        DATASET_FILE,
+        mode="a",
+        header=write_header,
+        index=False,
+        encoding="utf-8"
+    )

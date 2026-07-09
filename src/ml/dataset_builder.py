@@ -10,10 +10,37 @@ import config
 from src.data import fetcher
 from src.db import manager as db
 from src.backtest import state as st
-from src.ml.dataset_storage import save_market_snapshot
+from src.ml.dataset_storage import save_market_snapshot,save_market_snapshots_batch
 from src.data.baker import calculate_reward_r
 import bisect
 import pandas as pd
+import queue
+
+
+snapshot_queue = queue.Queue(maxsize=0)
+writer_stop_event = threading.Event()
+BATCH_SIZE = 5_000
+
+def writer_loop():
+    buffer = []
+    while not writer_stop_event.is_set() or not snapshot_queue.empty():
+        try:
+           
+            item = snapshot_queue.get(timeout=0.5)
+            buffer.append(item)
+            if len(buffer) >= BATCH_SIZE:
+                _flush_buffer(buffer)
+                buffer.clear()
+        except queue.Empty:
+            if buffer:
+                _flush_buffer(buffer)
+                buffer.clear()
+
+    if buffer:
+        _flush_buffer(buffer)
+
+def _flush_buffer(buf):
+    save_market_snapshots_batch(buf)
 
 def load_global_data():
     global enriched_candels, enriched_timestamps
@@ -32,7 +59,6 @@ _checked_ids = set()
 global _check_lock
 _check_lock = threading.Lock()
 
-BATCH_SIZE = 5_000
 file_lock = threading.Lock()
 
 def flush_snapshots(buffer: list, lock: threading.Lock):
@@ -54,14 +80,18 @@ def get_enriched_window_mem(baseline_timestamp: int, window_size: int = 50) -> p
     return enriched_candels.iloc[start_idx : idx + 1]
 
 def get_next_baseline_candle_in_range_mem(start_ts: int, end_ts: int) -> dict | None:
-    
-    with _check_lock:
-        for candle in base_line_candels:
-            ts = candle["Timestamp"]
-            if start_ts <= ts <= end_ts and candle["id"] not in _checked_ids:
-                _checked_ids.add(candle["id"])
-                return candle
-        return None
+   
+    idx = bisect.bisect_left(base_line_timestamps, start_ts)
+           
+    for i in range(idx, len(base_line_candels)):
+        candle = base_line_candels[i]
+        ts = candle["Timestamp"]
+        if ts > end_ts:
+            break                          
+        if candle["id"] not in _checked_ids:
+            _checked_ids.add(candle["id"])
+            return candle
+    return None
     
 def get_baseline_progress_mem() -> tuple[int, int]:
     """Return (checked_count, total_count) from in-memory structures."""
@@ -110,14 +140,12 @@ def run_thread(thread_state: dict) -> None:
     end_ts = thread_state["end_ts"]
 
     counter = 0
-    snapshot_buffer = []
     index = 0
     while True:
         candle = get_next_baseline_candle_in_range_mem(start_ts, end_ts)
         if candle is None:
             thread_state["status"] = "done"
             st.save_thread_state(thread_index, thread_state)
-            flush_snapshots(snapshot_buffer, file_lock)
             return
         baseline_timestamp = candle["Timestamp"]
         baseline_id = candle["id"]
@@ -168,14 +196,8 @@ def run_thread(thread_state: dict) -> None:
             position["stop_loss"])
         
         
-        snapshot_buffer.append((
-            df_window,
-            config.SYMBOL_DISPLAY,
-            config.TRADING_TIME_FRAME,
-            timestamp,
-            position["side"],
-            result_r
-        ))
+        snapshot_queue.put((df_window, config.SYMBOL_DISPLAY, config.TRADING_TIME_FRAME,
+                    timestamp, position["side"], result_r))
         
         stop_loss = entry + stop_distance
         take_profit = entry - profit_distance
@@ -196,16 +218,9 @@ def run_thread(thread_state: dict) -> None:
             position["stop_loss"])
         
         
-        snapshot_buffer.append((
-            df_window,
-            config.SYMBOL_DISPLAY,
-            config.TRADING_TIME_FRAME,
-            timestamp,
-            position["side"],
-            result_r
-        ))
-        if len(snapshot_buffer) >= BATCH_SIZE:
-            flush_snapshots(snapshot_buffer, file_lock)
+        snapshot_queue.put((df_window, config.SYMBOL_DISPLAY, config.TRADING_TIME_FRAME,
+                    timestamp, position["side"], result_r))
+        
         
         # db.mark_baseline_candle_checked(baseline_id)
         thread_state["last_processed_ts"] = baseline_timestamp
@@ -267,6 +282,10 @@ def resume_dataset_builder() -> None:
 
 
 def _run_all(thread_states: list[dict]) -> None:
+   
+    writer_thread = threading.Thread(target=writer_loop, daemon=True)
+    writer_thread.start()
+
     stop_event = threading.Event()
     progress_thread = threading.Thread(
         target=_progress_bar_loop, args=(stop_event,), daemon=True
@@ -281,6 +300,10 @@ def _run_all(thread_states: list[dict]) -> None:
         t.start()
     for t in threads:
         t.join()
+
+    
+    writer_stop_event.set()
+    writer_thread.join()
 
     stop_event.set()
     progress_thread.join()
