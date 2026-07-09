@@ -151,6 +151,7 @@ def train():
         random_seed=42,
         verbose=100,
         use_best_model=True,
+        # bootstrap_type="Bayesian",
     )
 
     model.fit(
