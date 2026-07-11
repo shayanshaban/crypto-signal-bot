@@ -530,6 +530,17 @@ def get_enriched_window(
 
     return [dict(r) for r in rows]
 
+def get_all_enriched_candels() -> list[dict]:
+
+    with _db() as cur:
+        rows = cur.execute("""
+            SELECT *
+            FROM enriched_candles
+        """).fetchall()
+
+    rows.reverse()
+
+    return [dict(r) for r in rows]
 def get_candles_for_trigger(timestamp: int, timeframe: str, count: int = 100) -> list:
     """
     Return the last `count` candles up to `timestamp` from historical_candels,

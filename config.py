@@ -17,6 +17,10 @@ Sections:
 """
 
 from pathlib import Path
+from dotenv import load_dotenv
+import os
+
+load_dotenv(override=True)
 
 ROOT = Path(__file__).parent   # project root, usable in path builds
 
@@ -260,14 +264,10 @@ FEUTURES = {
     "distance_last_swing_low": "Distance Last Swing Low",
 }
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 8. Exchange Execution  [FUTURE — uncomment when ready]
+# 8. Exchange Execution
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# EXCHANGE           = "lbank"           # or "binance", "bybit" …
-# EXCHANGE_API_KEY   = ""                # load from .env in production
-# EXCHANGE_SECRET    = ""
-# TRADE_SIZE_USDT    = 100               # fixed USDT per trade
-# MAX_OPEN_POSITIONS = 1
-# LEVERAGE           = 5
+TABDEAL_API_KEY=os.getenv("TABDEAL_API_KEY")
+TABDEAL_SIGNATURE=os.getenv("TABDEAL_SIGNATURE")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
