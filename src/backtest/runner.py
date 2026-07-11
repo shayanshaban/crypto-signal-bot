@@ -66,7 +66,7 @@ def get_baseline_progress_mem() -> tuple[int, int]:
     return checked, total
 
 
-MAX_HOLDING_CANDLES = 30
+MAX_HOLDING_CANDLES = 1000
 def check_position(position,future_candles):
     exit_price = None
     for candle in future_candles:

@@ -15,7 +15,7 @@ from sklearn.metrics import (
 
 DATASET_FILE = config.DATASET_DIR + "/ml_dataset_v2.csv"
 
-MODEL_PATH = Path(config.MODEL_SAVE_PATH) / "long_short_depth10_auc0.6368_1.60M.cbm"
+MODEL_PATH = Path(config.MODEL_SAVE_PATH) / "RR6" /"long_short_depth10_auc0.6626_1.06M.cbm"
 
 def tune():
     df = pd.read_csv(DATASET_FILE,low_memory=False)
