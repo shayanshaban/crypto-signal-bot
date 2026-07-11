@@ -268,7 +268,7 @@ FEUTURES = {
     "distance_last_swing_low": "Distance Last Swing Low",
 }
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 8. Exchange Execution  [FUTURE — uncomment when ready]
+# 8. Exchange Execution
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TABDEAL_API_KEY=os.getenv("TABDEAL_API_KEY")
 TABDEAL_SIGNATURE=os.getenv("TABDEAL_SIGNATURE")
