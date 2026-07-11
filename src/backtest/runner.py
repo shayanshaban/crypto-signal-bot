@@ -66,7 +66,7 @@ def get_baseline_progress_mem() -> tuple[int, int]:
     return checked, total
 
 
-MAX_HOLDING_CANDLES = 30
+MAX_HOLDING_CANDLES = 100000000
 def check_position(position,future_candles):
     exit_price = None
     for candle in future_candles:
@@ -169,17 +169,10 @@ def run_thread(thread_state: dict) -> None:
                 timeframe=config.TRADING_TIME_FRAME,
                 symbol= config.SYMBOL_DISPLAY
                 )
-            
-
-            stop_distance = max(
-                atr * config.ATR_MULTIPLIER,
-                entry * config.MIN_STOP_PERCENT
-            )
-            profit_distance = stop_distance * config.RR
-            
+            atr_mul = ( entry * 0.0024 ) / atr
             if(prob >= 0.64):
-                stop_loss = entry - stop_distance
-                take_profit = entry + profit_distance
+                stop_loss = entry-(atr * atr_mul )
+                take_profit = entry + 10 * atr
                 position = {
                     "side" : "LONG",
                     "entry" : candle["Close"],
@@ -194,9 +187,10 @@ def run_thread(thread_state: dict) -> None:
                     timeframe=config.TRADING_TIME_FRAME,
                     symbol= config.SYMBOL_DISPLAY
                     )
+                atr_mul = ( entry * 0.0024 ) / atr
                 if(prob >= 0.64):
-                    stop_loss = entry + stop_distance
-                    take_profit = entry - profit_distance
+                    stop_loss = entry+(atr * atr_mul )
+                    take_profit = entry - 10* atr
                     position = {
                         "side" : "SHORT",
                         "entry" : candle["Close"],
