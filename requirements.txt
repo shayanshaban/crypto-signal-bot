@@ -7,3 +7,4 @@ pyarrow
 catboost
 scikit-learn
 tqdm
+python-dotenv
