@@ -77,7 +77,7 @@ def get_enriched_window_mem(baseline_timestamp: int, window_size: int = 50) -> p
         return pd.DataFrame()  
     
     start_idx = max(0, idx - window_size + 1)
-    return enriched_candels.iloc[start_idx : idx + 1]
+    return enriched_candels.iloc[start_idx : idx + 1].copy(deep=True)
 
 # def get_next_baseline_candle_in_range_mem(start_ts: int, end_ts: int) -> dict | None:
    
@@ -340,6 +340,18 @@ def _run_all(thread_states: list[dict]) -> None:
         t.start()
     for t in threads:
         t.join()
+
+    global enriched_candels, enriched_timestamps
+    global base_line_candels, base_line_timestamps
+
+    del enriched_candels
+    del enriched_timestamps
+    del base_line_candels
+    del base_line_timestamps
+
+    import gc
+    gc.collect()
+
 
     
     writer_stop_event.set()
