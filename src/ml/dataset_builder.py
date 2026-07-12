@@ -353,10 +353,10 @@ def _run_all(thread_states: list[dict]) -> None:
     gc.collect()
 
 
+    stop_event.set()
+    progress_thread.join()
     
     writer_stop_event.set()
     writer_thread.join()
 
-    stop_event.set()
-    progress_thread.join()
     print("Dataset builder complete.")
