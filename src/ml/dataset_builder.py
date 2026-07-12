@@ -341,6 +341,9 @@ def _run_all(thread_states: list[dict]) -> None:
     for t in threads:
         t.join()
 
+    stop_event.set()
+    progress_thread.join()
+    
     global enriched_candels, enriched_timestamps
     global base_line_candels, base_line_timestamps
 
@@ -353,8 +356,6 @@ def _run_all(thread_states: list[dict]) -> None:
     gc.collect()
 
 
-    stop_event.set()
-    progress_thread.join()
     
     writer_stop_event.set()
     writer_thread.join()
