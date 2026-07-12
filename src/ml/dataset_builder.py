@@ -207,17 +207,18 @@ def run_thread(thread_state: dict) -> None:
             continue
 
         entry = candle["Close"]
-        stop_distance = max(
-            atr * config.ATR_MULTIPLIER,
-            entry * config.MIN_STOP_PERCENT
-        )
-        profit_distance = stop_distance * config.RR
+        # stop_distance = max(
+        #     atr * config.ATR_MULTIPLIER,
+        #     entry * config.MIN_STOP_PERCENT
+        # )
+        # profit_distance = stop_distance * config.RR
 
         
 
         future_candles = get_future_candles_mem(baseline_timestamp,1000)
-        stop_loss = entry - stop_distance
-        take_profit = entry + profit_distance
+
+        stop_loss = entry-(atr * config.ATR_MULTIPLIER_SL)
+        take_profit = entry + config.ATR_MULTIPLIER_TP * atr
 
         long_pos = {
             "side" : "LONG",
@@ -226,8 +227,8 @@ def run_thread(thread_state: dict) -> None:
             "take_profit" : take_profit
         }
 
-        stop_loss = entry + stop_distance
-        take_profit = entry - profit_distance
+        stop_loss = entry+(atr * config.ATR_MULTIPLIER_SL)
+        take_profit = entry - config.ATR_MULTIPLIER_TP * atr
 
         short_pos = {
             "side" : "SHORT",

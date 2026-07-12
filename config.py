@@ -95,6 +95,8 @@ TRADING_TIME_FRAME = "minute3"
 MIN_STOP_PERCENT = 0.0024   
 ATR_MULTIPLIER = 1.5         
 RR = 6
+ATR_MULTIPLIER_SL = 2
+ATR_MULTIPLIER_TP = 4
 
 CANDLES = {
     "month1":   {"tf_minutes": 43_200, "count": 24, "raw": False, "raw_and_bake": False},
