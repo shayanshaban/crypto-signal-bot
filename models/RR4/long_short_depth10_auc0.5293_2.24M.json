@@ -1,0 +1,9 @@
+{
+  "auc": 0.5293,
+  "depth": 10,
+  "learning_rate": 0.01,
+  "iterations": 3000,
+  "dataset_size": 2248960,
+  "timeframes": ["1m"],
+  "threshold": 0.56
+}
