@@ -152,9 +152,9 @@ def check_positions(long_pos: dict, short_pos: dict, future_candles: list[dict])
 
     # مقدار پیش‌فرض (مطابق رفتار قبلی: حد ضرر)
     if long_exit is None:
-        long_exit = long_pos["stop_loss"]
+        long_exit = candle["Close"]
     if short_exit is None:
-        short_exit = short_pos["stop_loss"]
+        short_exit = candle["Close"]
 
     return long_exit, short_exit
 
@@ -196,7 +196,7 @@ def run_thread(thread_state: dict) -> None:
             index = index - 1 
             continue
 
-        df_window = get_enriched_window_mem(timestamp, 5)
+        df_window = get_enriched_window_mem(timestamp, 2)
        
         atr = df_window.iloc[-1]["atr14"]
 
