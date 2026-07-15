@@ -323,6 +323,15 @@ def resume_dataset_builder() -> None:
 
 
 def _run_all(thread_states: list[dict]) -> None:
+    writer_stop_event.clear()
+
+    _checked_ids.clear()
+
+    while not snapshot_queue.empty():
+        try:
+            snapshot_queue.get_nowait()
+        except queue.Empty:
+            break
    
     writer_thread = threading.Thread(target=writer_loop, daemon=True)
     writer_thread.start()
@@ -360,5 +369,16 @@ def _run_all(thread_states: list[dict]) -> None:
     
     writer_stop_event.set()
     writer_thread.join()
+
+    _checked_ids.clear()
+
+    while not snapshot_queue.empty():
+        try:
+            snapshot_queue.get_nowait()
+        except queue.Empty:
+            break
+
+    import gc
+    gc.collect()
 
     print("Dataset builder complete.")
