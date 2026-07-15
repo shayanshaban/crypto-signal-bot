@@ -90,7 +90,7 @@ LOG_FILE    = str(ROOT / "logs"    / "signals.log")
 # 7. Timeframes & Candles
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-TRADING_TIME_FRAME = "minute3"
+TRADING_TIME_FRAME = "minute5"
 
 MIN_STOP_PERCENT = 0.0024   
 ATR_MULTIPLIER = 1.5         
