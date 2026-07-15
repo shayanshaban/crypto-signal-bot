@@ -210,7 +210,7 @@ def paper_trade():
 
         trade()
 def make_file_name_list(interval: str) -> list:
-    START_YEAR = 2020
+    START_YEAR = 2026
     START_MONTH = 1
 
     END_YEAR = 2026
@@ -239,10 +239,10 @@ def build_multitime_dataset():
         file = file_name
         print("-"*5,timeframe,"-"*5)
         db.reset_back_test_db(True)
-        file_list = make_file_name_list(config.MULTI_TIMME_FRAME_MAP[timeframe])
-        data_extractor.import_selected_files(config.IMPORT_DATA_FOLDER_DIR,file_list,True)
         config.TRADING_TIME_FRAME = timeframe
         config.DATASET_FILE_NAME = file + "_" +timeframe+".csv"
+        file_list = make_file_name_list(config.MULTI_TIMME_FRAME_MAP[timeframe])
+        data_extractor.import_selected_files(config.IMPORT_DATA_FOLDER_DIR,file_list,True)
         dataset_builder.start()
         
 
