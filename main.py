@@ -210,7 +210,7 @@ def paper_trade():
 
         trade()
 def make_file_name_list(interval: str) -> list:
-    START_YEAR = 2026
+    START_YEAR = 2020
     START_MONTH = 1
 
     END_YEAR = 2026
