@@ -232,22 +232,23 @@ def make_file_name_list(interval: str) -> list:
 
     return file_list
 
-def build_multitime_dataset():
+def build_multitime_dataset(timeframe):
     file_name = config.DATASET_FILE_NAME
     file = file_name
-    for timeframe in config.MULTI_TIMME_FRAME_LIST:
-        file = file_name
-        print("-"*5,timeframe,"-"*5)
-        db.reset_back_test_db(True)
-        print("-"*5,"DataBase Cleared","-"*5)
-        config.TRADING_TIME_FRAME = timeframe
-        config.DATASET_FILE_NAME = file + "_" +timeframe+".csv"
-        file_list = make_file_name_list(config.MULTI_TIMME_FRAME_MAP[timeframe])
-        print("-"*5,"File List Created","-"*5)
-        data_extractor.import_selected_files(config.IMPORT_DATA_FOLDER_DIR,file_list,True)
-        print("-"*5,"Zip Files has been imported","-"*5)
-        dataset_builder.start()
-        print("-"*5,"Dataset Built","-"*5)
+    if not timeframe in config.MULTI_TIMME_FRAME_LIST:
+        return
+    file = file_name
+    print("-"*5,timeframe,"-"*5)
+    db.reset_back_test_db(True)
+    print("-"*5,"DataBase Cleared","-"*5)
+    config.TRADING_TIME_FRAME = timeframe
+    config.DATASET_FILE_NAME = file + "_" +timeframe+".csv"
+    file_list = make_file_name_list(config.MULTI_TIMME_FRAME_MAP[timeframe])
+    print("-"*5,"File List Created","-"*5)
+    data_extractor.import_selected_files(config.IMPORT_DATA_FOLDER_DIR,file_list,True)
+    print("-"*5,"Zip Files has been imported","-"*5)
+    dataset_builder.start()
+    print("-"*5,"Dataset Built","-"*5)
         
 
 # ── Router ────────────────────────────────────────────────────────────────────
@@ -293,8 +294,8 @@ def main() -> None:
         tune()
     elif args[0] == "build-dataset":
         dataset_builder.start()
-    elif args[0] == "build-multitime-dataset":
-        build_multitime_dataset()
+    elif args[0] == "build-easy-dataset":
+        build_multitime_dataset(input("Please Enter Timeframe: "))
     elif args[0] == "resume-build-dataset":
         dataset_builder.resume_dataset_builder()
     elif args[0] == "start-pt":
