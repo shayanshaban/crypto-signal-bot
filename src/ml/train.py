@@ -12,7 +12,7 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
-DATASET_FILE = config.DATASET_DIR + "/ml_dataset_v2.csv"
+DATASET_FILE = config.DATASET_DIR + config.DATASET_FILE_NAME
 
 
 def clean_dataset(df: pd.DataFrame) -> pd.DataFrame:

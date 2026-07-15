@@ -110,3 +110,85 @@ def import_zip_folder(folder: str):
         config.SYMBOL_DISPLAY,
         config.TRADING_TIME_FRAME,
     )
+
+def import_selected_files(folder: str, file_names: list[str], ignore_state: bool = False):
+    """
+    Import only selected zip files.
+
+    Args:
+        folder: Folder containing zip files.
+        file_names: List of zip file names.
+        ignore_state: If True, imports files even if they are already in import_state.json.
+    """
+    folder = Path(folder)
+    imported = load_import_state(folder)
+
+    for file_name in file_names:
+        zip_path = folder / file_name
+
+        if not zip_path.exists():
+            print(f"File not found: {file_name}")
+            continue
+
+        if not ignore_state and file_name in imported:
+            print(f"Skip {file_name}")
+            continue
+
+        print(f"Importing {file_name}")
+
+        with zipfile.ZipFile(zip_path) as z:
+            csv_name = next(name for name in z.namelist() if name.endswith(".csv"))
+
+            with z.open(csv_name) as f:
+                df = pd.read_csv(f, header=None)
+
+                if str(df.iloc[0, 0]).strip().lower() == "open_time":
+                    df.columns = df.iloc[0]
+                    df = df.iloc[1:].reset_index(drop=True)
+                    df = df[
+                        ["open_time", "open", "high", "low", "close", "volume"]
+                    ]
+                else:
+                    df = df.iloc[:, :6]
+                    df.columns = [
+                        "open_time",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                    ]
+
+        candles = [
+            (
+                int(row.open_time) // 1000,
+                float(row.open),
+                float(row.high),
+                float(row.low),
+                float(row.close),
+                float(row.volume),
+            )
+            for row in df.itertuples(index=False)
+        ]
+
+        db.save_historical_candel(
+            candles,
+            config.TRADING_TIME_FRAME,
+        )
+
+        imported.add(file_name)
+        save_import_state(folder, imported)
+
+        print(f"Saved {len(candles)} candles")
+
+    db.rebuild_baseline_from_historical(config.TRADING_TIME_FRAME)
+
+    print("Enriching Data.... (It Takes Several Minutes)")
+    candles = db.get_all_baseline()
+    df_window = db.candles_to_dataframe(candles)
+    df_window = enrich_dataframe(df_window, True)
+    db.insert_enriched_dataframe(
+        df_window,
+        config.SYMBOL_DISPLAY,
+        config.TRADING_TIME_FRAME,
+    )

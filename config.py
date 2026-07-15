@@ -156,6 +156,15 @@ MAX_HOLDING_BARS = 120
 # Dataset
 DATASET_DIR = str(ROOT / "dataset")
 MODEL_SAVE_PATH = str(ROOT / "models")
+MULTI_TIMME_FRAME_LIST = ["minute1","minute3","minute5","minute15","minute30"]
+MULTI_TIMME_FRAME_MAP = {
+    "minute1" : "1m",
+    "minute3" : "3m",
+    "minute5" : "5m",
+    "minute15": "15m",
+    "minute30": "30m",
+    }
+DATASET_FILE_NAME = "/ml_dataset_v2.csv"
 
 FEUTURES = {
     "open": "Open",

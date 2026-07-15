@@ -197,7 +197,7 @@ def df_to_sample(
     return sample
 
 def save_sample(sample_df: pd.DataFrame,symbol: str,timeframe: str,candle_ts:int,side: str,setup_type: str,result_r:float):
-    DATASET_FILE = config.DATASET_DIR  + "/ml_dataset.csv"
+    DATASET_FILE = config.DATASET_DIR  + config.DATASET_FILE_NAME
     if result_r is None:
         return
     sample = df_to_sample(sample_df,symbol,timeframe,candle_ts,side,setup_type,result_r)
@@ -220,7 +220,7 @@ def save_sample(sample_df: pd.DataFrame,symbol: str,timeframe: str,candle_ts:int
             encoding="utf-8"
         )
 def save_market_snapshot(sample_df: pd.DataFrame,symbol: str,timeframe: str,candle_ts:int,side: str,result_r:float):
-    DATASET_FILE = config.DATASET_DIR  + "/ml_dataset_v2.csv"
+    DATASET_FILE = config.DATASET_DIR  + config.DATASET_FILE_NAME
     if result_r is None:
         return
     sample = row_to_sample(sample_df,symbol,timeframe,candle_ts,side,result_r)
@@ -260,7 +260,7 @@ def save_market_snapshots_batch(snapshot_list: list) -> None:
 
     df = pd.DataFrame(samples)
 
-    DATASET_FILE = config.DATASET_DIR + "/ml_dataset_v2.csv"
+    DATASET_FILE = config.DATASET_DIR + config.DATASET_FILE_NAME
     write_header = not Path(DATASET_FILE).exists()
 
     df.to_csv(

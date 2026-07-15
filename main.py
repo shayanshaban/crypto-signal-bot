@@ -209,7 +209,42 @@ def paper_trade():
         time.sleep(sleep_time+4)
 
         trade()
-    
+def make_file_name_list(interval: str) -> list:
+    START_YEAR = 2020
+    START_MONTH = 1
+
+    END_YEAR = 2026
+    END_MONTH = 5
+    file_list = []
+    for year in range(START_YEAR, END_YEAR + 1):
+        for month in range(1, 13):
+
+            if year == START_YEAR and month < START_MONTH:
+                continue
+
+            if year == END_YEAR and month > END_MONTH:
+                break
+
+            month_str = f"{month:02d}"
+
+            filename = f"{config.SYMBOL_DISPLAY}-{interval}-{year}-{month_str}.zip"
+            file_list.append(filename)
+
+    return file_list
+
+def build_multitime_dataset():
+    file_name = config.DATASET_FILE_NAME
+    file = file_name
+    for timeframe in config.MULTI_TIMME_FRAME_LIST:
+        file = file_name
+        print("-"*5,timeframe,"-"*5)
+        db.reset_back_test_db(True)
+        file_list = make_file_name_list(config.MULTI_TIMME_FRAME_MAP[timeframe])
+        data_extractor.import_selected_files(config.IMPORT_DATA_FOLDER_DIR,file_list,True)
+        config.TRADING_TIME_FRAME = timeframe
+        config.DATASET_FILE_NAME = file + "_" +timeframe+".csv"
+        dataset_builder.start()
+        
 
 # ── Router ────────────────────────────────────────────────────────────────────
 
@@ -254,6 +289,8 @@ def main() -> None:
         tune()
     elif args[0] == "build-dataset":
         dataset_builder.start()
+    elif args[0] == "build-multitime-dataset":
+        build_multitime_dataset()
     elif args[0] == "resume-build-dataset":
         dataset_builder.resume_dataset_builder()
     elif args[0] == "start-pt":
