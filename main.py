@@ -164,8 +164,8 @@ def trade():
         )
     atr = enriched_data.iloc[-1]["ATR(14)"]
     if(prob >= 0.56):
-        stop_loss = entry - 1.5 * atr
-        take_profit = entry + 3.0 * atr
+        stop_loss = entry - config.ATR_MULTIPLIER_SL * atr
+        take_profit = entry + config.ATR_MULTIPLIER_TP * atr
         side = "LONG"
         
     prob = predictor.predict_probability(
@@ -175,8 +175,8 @@ def trade():
         symbol= config.SYMBOL_DISPLAY
         )
     if(prob >= 0.56):
-        stop_loss = entry + 1.5 * atr
-        take_profit = entry - 3.0 * atr
+        stop_loss = entry + config.ATR_MULTIPLIER_SL  * atr
+        take_profit = entry - config.ATR_MULTIPLIER_TP * atr
         side = "SHORT"
 
     if(entry == None or take_profit == None or stop_loss == None):
@@ -191,7 +191,7 @@ def trade():
         entry_price=entry,
         stop_loss=stop_loss,
         take_profit=take_profit,
-        risk_percent=0.01,   # risk 1% of balance
+        risk_percent=0.02,   # risk 1% of balance
         leverage=100,
         slippage_rate=DEFAULT_SLIPPAGE,
     )
@@ -204,7 +204,7 @@ def paper_trade():
         now = datetime.now(timezone.utc)
 
         
-        sleep_time = 60 - now.second - now.microsecond / 1_000_000
+        sleep_time = 300 - now.second - now.microsecond / 1_000_000
 
         time.sleep(sleep_time+4)
 

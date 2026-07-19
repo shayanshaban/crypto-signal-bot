@@ -59,13 +59,14 @@ class PaperTrader:
         side : str
             "LONG" or "SHORT".
         entry_price : float
-            Market price at which to open.
+            Market (quoted) price at which the order is triggered.
+            Actual fill price is adjusted by slippage_rate.
         stop_loss : float
             Stop-loss trigger price.
         take_profit : float
             Take-profit trigger price.
         risk_percent : float
-            Fraction of balance to risk (0.0–1.0).
+            Fraction of balance to risk (0.0-1.0).
         leverage : int
             Leverage multiplier.
         slippage_rate : float
@@ -76,7 +77,7 @@ class PaperTrader:
         Position
             The newly created OPEN position.
         """
-        # --- Pre-validation ---
+        # --- Pre-validation (against quoted entry_price, before slippage) ---
         if entry_price <= 0 or stop_loss <= 0 or take_profit <= 0:
             raise ValueError("Prices must be positive.")
         if risk_percent <= 0 or risk_percent > 1:
@@ -95,17 +96,26 @@ class PaperTrader:
             if take_profit >= entry_price:
                 raise ValueError("SHORT take-profit must be below entry.")
 
-        # --- Load wallet & calculate position size ---
+        # --- Apply slippage to get effective fill price ---
+        # LONG: buying, adverse slippage pushes fill price up.
+        # SHORT: selling, adverse slippage pushes fill price down.
+        if side == "LONG":
+            effective_entry = entry_price * (1 + slippage_rate)
+        else:
+            effective_entry = entry_price * (1 - slippage_rate)
+        effective_entry = round_price(effective_entry)
+
+        # --- Load wallet & calculate position size (based on effective_entry) ---
         wallet = self.wallet_manager.load_wallet()
         sizing = self.risk_manager.calculate_position_size(
             balance=wallet.balance,
             free_margin=wallet.free_margin,
             risk_percent=risk_percent,
-            entry_price=entry_price,
+            entry_price=effective_entry,
             stop_loss=stop_loss,
             leverage=leverage,
-            fee_rate=0,
-            slippage_rate=0,
+            fee_rate=FEE_RATE,
+            slippage_rate=0,  # already applied above; avoid double-counting
             side=side,
         )
         quantity = sizing["quantity"]
@@ -113,40 +123,43 @@ class PaperTrader:
             raise MarginException("Calculated quantity is zero or negative – insufficient funds or risk too small.")
 
         margin_required = sizing["margin_required"]
-       
+
+        # --- Calculate opening fee (based on effective notional value) ---
+        notional_value = effective_entry * quantity
+        fee_open = notional_value * FEE_RATE
 
         # Final sanity: wallet must cover margin + fee
-        if wallet.balance < margin_required :
+        if wallet.balance < margin_required + fee_open:
             raise MarginException("Balance too low to cover margin and opening fee.")
 
-        # --- Calculate liquidation price ---
+        # --- Calculate liquidation price (based on effective_entry) ---
         # Simplified: price where unrealised loss = 100% of margin (maintenance margin = 0).
         if side == "LONG":
-            liquidation_price = entry_price - (margin_required / quantity)
+            liquidation_price = effective_entry - (margin_required / quantity)
         else:
-            liquidation_price = entry_price + (margin_required / quantity)
+            liquidation_price = effective_entry + (margin_required / quantity)
         liquidation_price = round_price(liquidation_price)
 
         # --- Construct position ---
         position = Position(
             symbol=symbol,
             side=side,
-            entry_price=entry_price,
+            entry_price=effective_entry,
             quantity=quantity,
             leverage=leverage,
             margin=margin_required,
             risk_percent=risk_percent,
             stop_loss=stop_loss,
             take_profit=take_profit,
-            fee_open=0,
+            fee_open=fee_open,
             liquidation_price=liquidation_price,
             status="OPEN",
             metadata={},
         )
 
         # --- Update wallet ---
-        wallet.balance -= 0
-        wallet.total_fees += 0
+        wallet.balance -= fee_open
+        wallet.total_fees += fee_open
         wallet.used_margin += margin_required
         wallet.open_positions.append(position)
         self._recalc_equity(wallet)
@@ -159,9 +172,9 @@ class PaperTrader:
             position_id=position.id,
             symbol=symbol,
             side=side,
-            price=entry_price,
+            price=effective_entry,
             quantity=quantity,
-            fee=0,
+            fee=fee_open,
             pnl=0.0,
             balance=wallet.balance,
             equity=wallet.equity,
@@ -178,26 +191,10 @@ class PaperTrader:
     ) -> Position:
         """
         Close an existing position, realise PnL, and update wallet.
-
-        Parameters
-        ----------
-        position_id : str
-            ID of the position to close.
-        exit_price : float
-            Market price at which to close.
-        reason : str
-            One of MANUAL_CLOSE, STOP_LOSS, TAKE_PROFIT, LIQUIDATION.
-        slippage_rate : float
-            Slippage fraction applied to exit execution.
-
-        Returns
-        -------
-        Position
-            The closed position (status CLOSED or LIQUIDATED).
+        Uses the global FEE_RATE for closing fee (same rate as open_position).
         """
         wallet = self.wallet_manager.load_wallet()
 
-        # Find position
         pos = None
         for p in wallet.open_positions:
             if p.id == position_id:
@@ -206,14 +203,12 @@ class PaperTrader:
         if pos is None:
             raise PositionException(f"Position {position_id} not found or already closed.")
 
-        # Apply slippage
         if pos.side == "LONG":
             effective_exit = exit_price * (1 - slippage_rate)
         else:
             effective_exit = exit_price * (1 + slippage_rate)
         effective_exit = round_price(effective_exit)
 
-        # --- Compute PnL ---
         if pos.side == "LONG":
             gross_pnl = (effective_exit - pos.entry_price) * pos.quantity
         else:
@@ -222,7 +217,6 @@ class PaperTrader:
         fee_close = pos.quantity * effective_exit * FEE_RATE
         realized_pnl = gross_pnl - pos.fee_open - fee_close
 
-        # --- Update position ---
         pos.exit_price = effective_exit
         pos.fee_close = fee_close
         pos.realized_pnl = realized_pnl
@@ -230,8 +224,7 @@ class PaperTrader:
         pos.status = "LIQUIDATED" if reason == "LIQUIDATION" else "CLOSED"
         pos.closed_at = utc_now()
 
-        # --- Update wallet ---
-        wallet.balance += gross_pnl - fee_close  # fee_open already deducted at open
+        wallet.balance += gross_pnl - fee_close
         wallet.total_fees += fee_close
         wallet.used_margin -= pos.margin
         wallet.realized_pnl += realized_pnl
@@ -241,12 +234,10 @@ class PaperTrader:
         else:
             wallet.losing_trades += 1
 
-        # Move from open to closed list
         wallet.open_positions.remove(pos)
         wallet.closed_positions.append(pos)
 
         self._recalc_equity(wallet)
-        # Update drawdown
         if wallet.equity < wallet.peak_balance:
             drawdown = (wallet.peak_balance - wallet.equity) / wallet.peak_balance
             if drawdown > wallet.max_drawdown:
@@ -255,7 +246,6 @@ class PaperTrader:
 
         self.wallet_manager.save_wallet(wallet)
 
-        # Log
         self.logger.log_event(
             event=reason,
             position_id=pos.id,

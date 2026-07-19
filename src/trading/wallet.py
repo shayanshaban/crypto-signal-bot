@@ -35,7 +35,7 @@ class WalletManager:
         with self._lock:
             self._write_to_disk(wallet)
 
-    def create_default(self, initial_balance: float = 1000.0) -> Wallet:
+    def create_default(self, initial_balance: float = 100.0) -> Wallet:
         """Create a new wallet with the given starting balance."""
         wallet = Wallet(
             balance=initial_balance,

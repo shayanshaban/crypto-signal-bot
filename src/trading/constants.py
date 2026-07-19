@@ -1,8 +1,8 @@
 """Global constants and configuration parameters."""
 
 # --- Fee & Slippage ---
-FEE_RATE: float = 0         # 0.04% per trade
-DEFAULT_SLIPPAGE: float = 0.0000  # 0.05%
+FEE_RATE: float = 0.001         # 0.04% per trade
+DEFAULT_SLIPPAGE: float = 0.0005  # 0.05%
 
 # --- Position Limits ---
 DEFAULT_MIN_QUANTITY: float = 0.0001

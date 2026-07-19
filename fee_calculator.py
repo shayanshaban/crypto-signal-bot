@@ -56,9 +56,9 @@ def expected_profit_per_trade(
 profit = expected_profit_per_trade(
     capital=200,
     risk_percent=2,
-    win_rate=37.8,
-    avg_win_percent=0.82,
-    avg_loss_percent=0.12,
+    win_rate=52,
+    avg_win_percent=0.85,
+    avg_loss_percent=0.41,
     fee_percent=0.1,
 )
 
