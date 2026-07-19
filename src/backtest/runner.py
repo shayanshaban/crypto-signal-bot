@@ -171,12 +171,12 @@ def run_thread(thread_state: dict) -> None:
                 )
             
             stop_distance = max(
-                atr * config.ATR_MULTIPLIER,
+                atr * config.ATR_MULTIPLIER_SL,
                 entry * config.MIN_STOP_PERCENT
             )
             profit_distance = stop_distance * config.RR
             if(prob >= 0.64):
-                stop_loss = entry-(atr * config.ATR_MULTIPLIER_SL)
+                stop_loss = entry-stop_distance
                 take_profit = entry + config.ATR_MULTIPLIER_TP * atr
                 position = {
                     "side" : "LONG",
@@ -192,9 +192,8 @@ def run_thread(thread_state: dict) -> None:
                     timeframe=config.TRADING_TIME_FRAME,
                     symbol= config.SYMBOL_DISPLAY
                     )
-                atr_mul = ( entry * 0.0024 ) / atr
                 if(prob >= 0.64):
-                    stop_loss = entry+(atr * config.ATR_MULTIPLIER_SL)
+                    stop_loss = entry+stop_distance
                     take_profit = entry - config.ATR_MULTIPLIER_TP * atr
                     position = {
                         "side" : "SHORT",
